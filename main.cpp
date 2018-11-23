@@ -53,18 +53,18 @@ class Cell
 
 // Define global variables
 const double bdratio = 0.5;
-const double _maxsize = 1e5;
-const int _seed = 112;
+const double _maxsize = 1e7;
+const int _seed = 114;
 const double _s = 0.1;
-const double _ut = 1.0;
-const double _ud = 0.1;
+const double _ut = 2.0;
+const double _ud = 0.2;
 const double _ur = 1e-4;
 const double r_death = bdratio * log(2.0);		// Death model 1
 const int model = 3;
 const int NEIGHBOURHOOD = 26;
 
 double radius_double, t, max_birth, ran;
-int radius, Ntot, iter, x, y, z, cell_index_x, cell_index_y, cell_index_z, r_birth, empty_neighbours, chosen_direction, queue, xrange, yrange, zrange;
+int radius, Ntot, iter, x, y, z, cell_index_x, cell_index_y, cell_index_z, r_birth, empty_neighbours, chosen_direction, queue, range, xrange, yrange, zrange;
 
 
 // Define poisson distributions
@@ -201,6 +201,22 @@ void MODEL3_divide(Cell *** tumour , int cell_index_x , int cell_index_y , int c
 }
 
 
+void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
+{
+
+	*range = 0;
+	do
+	{
+		if ((tumour[radius + axis[0]*(*range)][radius + axis[1]*(*range)][radius + axis[2]*(*range)].dvr != -1) || (tumour[radius - axis[0]*(*range)][radius - axis[1]*(*range)][radius - axis[2]*(*range)].dvr != -1)) *range += 1;
+	}
+	while ( (tumour[radius + axis[0]*(*range)][radius + axis[1]*(*range)][radius + axis[2]*(*range)].dvr != -1) || (tumour[radius - axis[0]*(*range)][radius - axis[1]*(*range)][radius - axis[2]*(*range)].dvr != -1) );
+
+	if ((radius - *range - 50) > 0) *range += 50;
+	else *range = radius;
+
+}	
+
+
 
 
 
@@ -221,7 +237,7 @@ int main(int argc, char const *argv[])
 
 	// Estimate radius of resulting tumour using fitted parameters from previous simulations (slightly over-estimate)
 	radius_double = pow ( (3.0*_maxsize/4.0*M_PI) , (1.0/3.0) );
-	radius = (int)(5.0*radius_double);
+	radius = (int)(1.5*radius_double);
 
 	cout << " " << endl;
 
@@ -287,6 +303,7 @@ int main(int argc, char const *argv[])
 	x = 0;
 	y = 0;
 	z = 0;
+	int axis[3] = {0,0,0};
 
 	do
 	{
@@ -299,38 +316,19 @@ int main(int argc, char const *argv[])
 		cell_index_z = 0;
 
 
-		// Method to increase speed of algorithm for lower Ntot
-		if (Ntot < _maxsize)
-		{
-			xrange = 1;
-			yrange = 1;
-			zrange = 1;
-		
-			do
-			{
-		
-				if ((tumour[radius + xrange][radius][radius].dvr != -1) || (tumour[radius - xrange][radius][radius].dvr != -1)) ++xrange;
-				if ((tumour[radius][radius + yrange][radius].dvr != -1) || (tumour[radius][radius - yrange][radius].dvr != -1)) ++yrange;
-				if ((tumour[radius][radius][radius + zrange].dvr != -1) || (tumour[radius][radius][radius - zrange].dvr != -1)) ++zrange;
-		
-			}
-			while ((tumour[radius + xrange][radius][radius].dvr != -1) || (tumour[radius - xrange][radius][radius].dvr != -1) ||
-				(tumour[radius][radius + yrange][radius].dvr != -1) || (tumour[radius][radius - yrange][radius].dvr != -1) ||
-				(tumour[radius][radius][radius + zrange].dvr != -1) || (tumour[radius][radius][radius - zrange].dvr != -1));
+		// Estimate current dimensions of tumour
+		axis[0] = 1;
+		axis[1] = 0;
+		axis[2] = 0;
+		get_range ( tumour , &xrange , radius , axis );
 
-				//cout << "xrange, yrange, zrange = " << xrange << ", " << yrange << ", " << zrange << endl; 
+		axis[0] = 0;
+		axis[1] = 1;
+		get_range ( tumour , &yrange , radius , axis );
 
-			xrange += 1;
-			yrange += 1;
-			zrange += 1;
-		}
-
-		else 
-		{
-			xrange = radius;
-			yrange = radius;
-			zrange = radius;
-		}
+		axis[1] = 0;
+		axis[2] = 1;
+		get_range ( tumour , &zrange , radius , axis );
 
 		do
 		{
@@ -393,9 +391,9 @@ int main(int argc, char const *argv[])
 		else if (drand48() < (r_death/max_birth))
 		{
 			// Delete cell from tumour
-			tumour[cell_index_x][cell_index_y][cell_index_z].dvr = -1;
-			tumour[cell_index_x][cell_index_y][cell_index_z].res = -1;
-			tumour[cell_index_x][cell_index_y][cell_index_z].pgr = -1;
+			tumour[cell_index_x][cell_index_y][cell_index_z].setDVR(-1);
+			tumour[cell_index_x][cell_index_y][cell_index_z].setRES(-1);
+			tumour[cell_index_x][cell_index_y][cell_index_z].setPGR(-1);
 
 			// Size of tumour is reduced by 1
 			Ntot -= 1;
@@ -406,7 +404,7 @@ int main(int argc, char const *argv[])
 
 
 		// Write total number of cells after regular number of iterations
-		if (iter%200 == 0)
+		if (iter%5000 == 0)
 		{
 
 			NversusT_file << t << " " << Ntot << endl;
@@ -421,6 +419,7 @@ int main(int argc, char const *argv[])
 
 	} while (Ntot < _maxsize);
 
+	cout << " " << endl;
 
 	// Write tumour data to file
 	for (int i = 0; i < (2*radius); ++i)
@@ -435,6 +434,8 @@ int main(int argc, char const *argv[])
 				}
 			}	
 		}
+		printf("Writing data... %i%%\r", (int)((i+1)*100.0/(2*radius)));
+		fflush(stdout);
 	}
 
 
