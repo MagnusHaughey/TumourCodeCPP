@@ -8,6 +8,7 @@
 # include <math.h>
 # include <random>
 # include <cstdlib>
+//# include <thread>
 //# include <algorithm> 
 //# include <vector>
 //# include <sys/types.h>
@@ -16,6 +17,43 @@
 //# include <unistd.h>
 
 using namespace std;
+
+
+
+/*******************************************************************************/
+
+
+
+// Define global variables
+const double bdratio = 0.5;
+const double _maxsize = 2e7;
+const int _seed = 117;
+const double _s = 0.1;
+const double _ut = 2.0;
+const double _ud = 0.2;
+const double _ur = 1e-4;
+const double r_death = bdratio * log(2.0);		// Death model 1
+const int model = 1;
+const int NEIGHBOURHOOD = 26;
+
+double radius_double, t, max_birth, ran;
+int radius, Ntot, iter, x, y, z, cell_x, cell_y, cell_z, r_birth, empty_neighbours, dir, queue, range, xrange, yrange, zrange, x_b, y_b, z_b;
+
+
+
+/*******************************************************************************/
+
+
+
+// Define poisson distributions
+default_random_engine generator;
+poisson_distribution<int> poisson_d(_ud);
+poisson_distribution<int> poisson_r(_ur);
+poisson_distribution<int> poisson_t(_ut);
+
+
+
+/*******************************************************************************/
 
 
 
@@ -47,53 +85,40 @@ class Cell
 		this->pgr = n;
 	}
 
+	void setGAs(int d , int r , int p)
+	{
+		this->dvr = d;
+		this->res = r;
+		this->pgr = p;
+	}
+
+	void newGAs()
+	{
+		this->dvr += poisson_d(generator);
+		this->res += poisson_r(generator);
+		this->pgr += poisson_t(generator);
+	}
+
 
 };
 
 
-// Define global variables
-const double bdratio = 0.5;
-const double _maxsize = 1e7;
-const int _seed = 114;
-const double _s = 0.1;
-const double _ut = 2.0;
-const double _ud = 0.2;
-const double _ur = 1e-4;
-const double r_death = bdratio * log(2.0);		// Death model 1
-const int model = 3;
-const int NEIGHBOURHOOD = 26;
 
-double radius_double, t, max_birth, ran;
-int radius, Ntot, iter, x, y, z, cell_index_x, cell_index_y, cell_index_z, r_birth, empty_neighbours, chosen_direction, queue, range, xrange, yrange, zrange;
+/*******************************************************************************/
 
 
-// Define poisson distributions
-default_random_engine generator;
-poisson_distribution<int> poisson_d(_ud);
-poisson_distribution<int> poisson_r(_ur);
-poisson_distribution<int> poisson_t(_ut);
 
 
 // Define cell division in volumetric growth model with "straight line" cell displacement 
-void MODEL1_divide(Cell *** tumour , int cell_index_x , int cell_index_y , int cell_index_z , int *Ntot)
+void MODEL1_divide(Cell *** tumour , int cell_x , int cell_y , int cell_z , int *Ntot , int *x_b , int *y_b , int *z_b , int radius)
 {
 
 	// Randomly select the direction in which to divide
-	do{
-		ran = drand48();
-		if (ran < (1.0/3.0)) x = -1;
-		else if (ran < (2.0/3.0)) x = 0;
-		else x = 1;
-
-		ran = drand48();
-		if (ran < (1.0/3.0)) y = -1;
-		else if (ran < (2.0/3.0)) y = 0;
-		else y = 1;
-
-		ran = drand48();
-		if (ran < (1.0/3.0)) z = -1;
-		else if (ran < (2.0/3.0)) z = 0;
-		else z = 1;
+	do
+	{
+		x = (int)(drand48()*3.0) - 1;
+		y = (int)(drand48()*3.0) - 1;
+		z = (int)(drand48()*3.0) - 1;
 	}
 	while ((x == 0) && (y == 0) && (z == 0));
 
@@ -101,101 +126,85 @@ void MODEL1_divide(Cell *** tumour , int cell_index_x , int cell_index_y , int c
 	queue = -1;
 
 	do ++queue;
-	while (tumour[cell_index_x + x*(queue+1)][cell_index_y + y*(queue+1)][cell_index_z + z*(queue+1)].dvr != -1 );
+	while (tumour[cell_x + x*(queue+1)][cell_y + y*(queue+1)][cell_z + z*(queue+1)].dvr != -1 );
 
 	// Shove cells outwards
 	for (int j = 0; j < queue; j++)
 	{
-		tumour[cell_index_x + x*(queue - j + 1)][cell_index_y + y*(queue - j + 1)][cell_index_z + z*(queue - j + 1)] = tumour[cell_index_x + x*(queue - j)][cell_index_y + y*(queue - j)][cell_index_z + z*(queue - j)];
+		tumour[cell_x + x*(queue - j + 1)][cell_y + y*(queue - j + 1)][cell_z + z*(queue - j + 1)] = tumour[cell_x + x*(queue - j)][cell_y + y*(queue - j)][cell_z + z*(queue - j)];
 	}
 
 	// Create daughter cell
-	tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].setDVR(tumour[cell_index_x][cell_index_y][cell_index_z].dvr);
-	tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].setRES(tumour[cell_index_x][cell_index_y][cell_index_z].res);
-	tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].setPGR(tumour[cell_index_x][cell_index_y][cell_index_z].pgr);
+	tumour[cell_x + x][cell_y + y][cell_z + z].setGAs(tumour[cell_x][cell_y][cell_z].dvr , tumour[cell_x][cell_y][cell_z].res , tumour[cell_x][cell_y][cell_z].pgr);
 
 	*Ntot += 1;
 
-	// Add new GAs to daughter cells
-	tumour[cell_index_x][cell_index_y][cell_index_z].dvr += poisson_d(generator);
-	tumour[cell_index_x][cell_index_y][cell_index_z].res += poisson_r(generator);
-	tumour[cell_index_x][cell_index_y][cell_index_z].pgr += poisson_t(generator);
+	// Update bounds on tumour size
+	if (fabs(cell_x + x*(queue + 1) - radius) > *x_b) *x_b = fabs(cell_x + x*(queue + 1) - radius);
+	if (fabs(cell_y + y*(queue + 1) - radius) > *y_b) *y_b = fabs(cell_y + y*(queue + 1) - radius);
+	if (fabs(cell_z + z*(queue + 1) - radius) > *z_b) *z_b = fabs(cell_z + z*(queue + 1) - radius);
 
-	tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].dvr += poisson_d(generator);
-	tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].res += poisson_r(generator);
-	tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].pgr += poisson_t(generator);
+
+	// Add new GAs to daughter cells
+	tumour[cell_x][cell_y][cell_z].newGAs();
+	tumour[cell_x + x][cell_y + y][cell_z + z].newGAs();
 
 }
 
 
 // Define cell division in volumetric growth model, but where cells completely surrounded by other tumour cells cannot replicate (p_divide NOT proportional to number of empty neighbours)
-void MODEL2_divide(Cell *** tumour , int x_nn[] , int y_nn[] , int z_nn[] , int cell_index_x , int cell_index_y , int cell_index_z  , int *Ntot , int empty_neighbours)
+void MODEL2_divide(Cell *** tumour , int x_nn[] , int y_nn[] , int z_nn[] , int cell_x , int cell_y , int cell_z  , int *Ntot , int empty_neighbours , int *x_b , int *y_b , int *z_b , int radius)
 {
 
-	chosen_direction = (int)(drand48()*((double)empty_neighbours));
+	dir = (int)(drand48()*((double)empty_neighbours));
 
 	// Create daughter cell
-	tumour[cell_index_x + x_nn[chosen_direction]][cell_index_y + y_nn[chosen_direction]][cell_index_z + z_nn[chosen_direction]].setDVR(tumour[cell_index_x][cell_index_y][cell_index_z].dvr);
-	tumour[cell_index_x + x_nn[chosen_direction]][cell_index_y + y_nn[chosen_direction]][cell_index_z + z_nn[chosen_direction]].setRES(tumour[cell_index_x][cell_index_y][cell_index_z].res);
-	tumour[cell_index_x + x_nn[chosen_direction]][cell_index_y + y_nn[chosen_direction]][cell_index_z + z_nn[chosen_direction]].setPGR(tumour[cell_index_x][cell_index_y][cell_index_z].pgr);
+	tumour[cell_x + x_nn[dir]][cell_y + y_nn[dir]][cell_z + z_nn[dir]].setGAs(tumour[cell_x][cell_y][cell_z].dvr , tumour[cell_x][cell_y][cell_z].res , tumour[cell_x][cell_y][cell_z].pgr);
 	
 	*Ntot += 1;
 
-	// Add new GAs to daughter cells
-	tumour[cell_index_x][cell_index_y][cell_index_z].dvr += poisson_d(generator);
-	tumour[cell_index_x][cell_index_y][cell_index_z].res += poisson_r(generator);
-	tumour[cell_index_x][cell_index_y][cell_index_z].pgr += poisson_t(generator);
+	// Update bounds on tumour size
+	if (fabs(cell_x + x_nn[dir] - radius) > *x_b) *x_b = fabs(cell_x + x_nn[dir] - radius);
+	if (fabs(cell_x + y_nn[dir] - radius) > *y_b) *y_b = fabs(cell_y + y_nn[dir] - radius);
+	if (fabs(cell_x + z_nn[dir] - radius) > *z_b) *z_b = fabs(cell_z + z_nn[dir] - radius);
 
-	tumour[cell_index_x + x_nn[chosen_direction]][cell_index_y + y_nn[chosen_direction]][cell_index_z + z_nn[chosen_direction]].dvr += poisson_d(generator);
-	tumour[cell_index_x + x_nn[chosen_direction]][cell_index_y + y_nn[chosen_direction]][cell_index_z + z_nn[chosen_direction]].res += poisson_r(generator);
-	tumour[cell_index_x + x_nn[chosen_direction]][cell_index_y + y_nn[chosen_direction]][cell_index_z + z_nn[chosen_direction]].pgr += poisson_t(generator);
+	// Add new GAs to daughter cells
+	tumour[cell_x][cell_y][cell_z].newGAs();
+	tumour[cell_x + x_nn[dir]][cell_y + y_nn[dir]][cell_z + z_nn[dir]].newGAs();
 
 }
 
 
 // Define cell division in volumetric growth model, but where cells completely surrounded by other tumour cells cannot replicate (p_divide proportional to number of empty neighbours)
-void MODEL3_divide(Cell *** tumour , int cell_index_x , int cell_index_y , int cell_index_z  , int *Ntot)
+void MODEL3_divide(Cell *** tumour , int cell_x , int cell_y , int cell_z  , int *Ntot , int *x_b , int *y_b , int *z_b , int radius)
 {
 
 
 	// Randomly select the direction in which to divide
-	do{
-		ran = drand48();
-		if (ran < (1.0/3.0)) x = -1;
-		else if (ran < (2.0/3.0)) x = 0;
-		else x = 1;
-
-		ran = drand48();
-		if (ran < (1.0/3.0)) y = -1;
-		else if (ran < (2.0/3.0)) y = 0;
-		else y = 1;
-
-		ran = drand48();
-		if (ran < (1.0/3.0)) z = -1;
-		else if (ran < (2.0/3.0)) z = 0;
-		else z = 1;
+	do
+	{
+		x = (int)(drand48()*3.0) - 1;
+		y = (int)(drand48()*3.0) - 1;
+		z = (int)(drand48()*3.0) - 1;
 	}
 	while ((x == 0) && (y == 0) && (z == 0));
 
-	if (tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].dvr == -1)		// Check if neighbour is empty
+	if (tumour[cell_x + x][cell_y + y][cell_z + z].dvr == -1)		// Check if neighbour is empty
 	{
 
 		// Create daughter cell
-		tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].setDVR(tumour[cell_index_x][cell_index_y][cell_index_z].dvr);
-		tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].setRES(tumour[cell_index_x][cell_index_y][cell_index_z].res);
-		tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].setPGR(tumour[cell_index_x][cell_index_y][cell_index_z].pgr);
+		tumour[cell_x + x][cell_y + y][cell_z + z].setGAs(tumour[cell_x][cell_y][cell_z].dvr , tumour[cell_x][cell_y][cell_z].res , tumour[cell_x][cell_y][cell_z].pgr);
 
 		*Ntot += 1;
 
 		// Add new GAs to daughter cells
-		tumour[cell_index_x][cell_index_y][cell_index_z].dvr += poisson_d(generator);
-		tumour[cell_index_x][cell_index_y][cell_index_z].res += poisson_r(generator);
-		tumour[cell_index_x][cell_index_y][cell_index_z].pgr += poisson_t(generator);
+		tumour[cell_x][cell_y][cell_z].newGAs();
+		tumour[cell_x + x][cell_y + y][cell_z + z].newGAs();
 
-		tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].dvr += poisson_d(generator);
-		tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].res += poisson_r(generator);
-		tumour[cell_index_x + x][cell_index_y + y][cell_index_z + z].pgr += poisson_t(generator);
-
+		// Update bounds on tumour size
+		if (fabs(cell_x + x - radius) > *x_b) *x_b = fabs(cell_x + x - radius);
+		if (fabs(cell_y + y - radius) > *y_b) *y_b = fabs(cell_y + y - radius);
+		if (fabs(cell_z + z - radius) > *z_b) *z_b = fabs(cell_z + z - radius);
 	}
 
 }
@@ -207,9 +216,11 @@ void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
 	*range = 0;
 	do
 	{
-		if ((tumour[radius + axis[0]*(*range)][radius + axis[1]*(*range)][radius + axis[2]*(*range)].dvr != -1) || (tumour[radius - axis[0]*(*range)][radius - axis[1]*(*range)][radius - axis[2]*(*range)].dvr != -1)) *range += 1;
+		if ((tumour[radius + axis[0]*(*range)][radius + axis[1]*(*range)][radius + axis[2]*(*range)].dvr != -1)
+			|| (tumour[radius - axis[0]*(*range)][radius - axis[1]*(*range)][radius - axis[2]*(*range)].dvr != -1)) *range += 1;
 	}
-	while ( (tumour[radius + axis[0]*(*range)][radius + axis[1]*(*range)][radius + axis[2]*(*range)].dvr != -1) || (tumour[radius - axis[0]*(*range)][radius - axis[1]*(*range)][radius - axis[2]*(*range)].dvr != -1) );
+	while ( (tumour[radius + axis[0]*(*range)][radius + axis[1]*(*range)][radius + axis[2]*(*range)].dvr != -1) 
+		|| (tumour[radius - axis[0]*(*range)][radius - axis[1]*(*range)][radius - axis[2]*(*range)].dvr != -1) );
 
 	if ((radius - *range - 50) > 0) *range += 50;
 	else *range = radius;
@@ -218,11 +229,18 @@ void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
 
 
 
+/*******************************************************************************/
+
+
 
 
 int main(int argc, char const *argv[])
 {
-	
+
+	//unsigned concurentThreadsSupported = std::thread::hardware_concurrency();
+	//cout << "This machine has " << concurentThreadsSupported << " cores." << endl;
+	//exit(0);
+
 
 	// Reset time and tumour size variables
 	t = 0.0;
@@ -303,7 +321,9 @@ int main(int argc, char const *argv[])
 	x = 0;
 	y = 0;
 	z = 0;
-	int axis[3] = {0,0,0};
+	x_b = 0;
+	y_b = 0;
+	z_b = 0;
 
 	do
 	{
@@ -311,41 +331,26 @@ int main(int argc, char const *argv[])
 		++iter;
 
 		// Randomly select one cell to divide
-		cell_index_x = 0;
-		cell_index_y = 0;
-		cell_index_z = 0;
-
-
-		// Estimate current dimensions of tumour
-		axis[0] = 1;
-		axis[1] = 0;
-		axis[2] = 0;
-		get_range ( tumour , &xrange , radius , axis );
-
-		axis[0] = 0;
-		axis[1] = 1;
-		get_range ( tumour , &yrange , radius , axis );
-
-		axis[1] = 0;
-		axis[2] = 1;
-		get_range ( tumour , &zrange , radius , axis );
+		cell_x = 0;
+		cell_y = 0;
+		cell_z = 0;
 
 		do
 		{
 
-			cell_index_x = (int)((2*xrange)*drand48()) + radius - xrange;
-			cell_index_y = (int)((2*yrange)*drand48()) + radius - yrange;
-			cell_index_z = (int)((2*zrange)*drand48()) + radius - zrange;
+			cell_x = (int)((2*(x_b+1))*drand48()) + radius - x_b;
+			cell_y = (int)((2*(y_b+1))*drand48()) + radius - y_b;
+			cell_z = (int)((2*(z_b+1))*drand48()) + radius - z_b;
 
-			//cout << range << " " << radius << " " << cell_index_x << " " << cell_index_y << " " << cell_index_z << endl;
+			//cout << x_b << " " << y_b << " " << z_b << " " << radius << " " << cell_x << " " << cell_y << " " << cell_z << endl;
 
 		}
-		while (tumour[cell_index_x][cell_index_y][cell_index_z].dvr == -1);
+		while (tumour[cell_x][cell_y][cell_z].dvr == -1);
 		
 
 		// Compute birth and death rate of cell (params[3] is the selective advantage of a single driver mutation)
-		//r_birth = pow( (log(2.0)*(1.0 + _s)) , tumour[cell_index_x][cell_index_y].dvr );		// Birth model 1
-		r_birth = pow( (log(2.0)*(1.0 + _s)) , (tumour[cell_index_x][cell_index_y][cell_index_z].dvr - tumour[cell_index_x][cell_index_y][cell_index_z].res) );		// Birth model 2	
+		//r_birth = pow( (log(2.0)*(1.0 + _s)) , tumour[cell_x][cell_y].dvr );		// Birth model 1
+		r_birth = pow( (log(2.0)*(1.0 + _s)) , (tumour[cell_x][cell_y][cell_z].dvr - tumour[cell_x][cell_y][cell_z].res) );		// Birth model 2	
 
 
 		// Update maximal birth and death rate of all cells 
@@ -355,7 +360,7 @@ int main(int argc, char const *argv[])
 		// Cell divides with proability r_birth/max_birth
 		if (drand48() < (r_birth/max_birth))
 		{
-			if (model == 1) MODEL1_divide(tumour , cell_index_x , cell_index_y , cell_index_z , &Ntot);
+			if (model == 1) MODEL1_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
 			else if (model == 2) 
 			{
 				empty_neighbours = 0;
@@ -367,7 +372,7 @@ int main(int argc, char const *argv[])
 					{
 						for (int k = -1; k < 2; k++)
 						{
-							if (tumour[cell_index_x + i][cell_index_y + j][cell_index_z + k].dvr == -1) 	// if not occupied
+							if (tumour[cell_x + i][cell_y + j][cell_z + k].dvr == -1) 	// if not occupied
 							{
 								x_nn[empty_neighbours] = i; 	// Store coordinates of empty neighbour
 								y_nn[empty_neighbours] = j;
@@ -381,19 +386,19 @@ int main(int argc, char const *argv[])
 
 				if (empty_neighbours != 0)
 				{
-					MODEL2_divide(tumour , x_nn , y_nn , z_nn , cell_index_x , cell_index_y , cell_index_z , &Ntot , empty_neighbours);
+					MODEL2_divide(tumour , x_nn , y_nn , z_nn , cell_x , cell_y , cell_z , &Ntot , empty_neighbours , &x_b , &y_b , &z_b , radius);
 				}
 
 			}
-			else if (model == 3) MODEL3_divide(tumour , cell_index_x , cell_index_y , cell_index_z , &Ntot);
+			else if (model == 3) MODEL3_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
 		}
 
 		else if (drand48() < (r_death/max_birth))
 		{
 			// Delete cell from tumour
-			tumour[cell_index_x][cell_index_y][cell_index_z].setDVR(-1);
-			tumour[cell_index_x][cell_index_y][cell_index_z].setRES(-1);
-			tumour[cell_index_x][cell_index_y][cell_index_z].setPGR(-1);
+			tumour[cell_x][cell_y][cell_z].setDVR(-1);
+			tumour[cell_x][cell_y][cell_z].setRES(-1);
+			tumour[cell_x][cell_y][cell_z].setPGR(-1);
 
 			// Size of tumour is reduced by 1
 			Ntot -= 1;
@@ -404,7 +409,7 @@ int main(int argc, char const *argv[])
 
 
 		// Write total number of cells after regular number of iterations
-		if (iter%5000 == 0)
+		if (iter%25000 == 0)
 		{
 
 			NversusT_file << t << " " << Ntot << endl;
