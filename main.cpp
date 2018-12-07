@@ -8,6 +8,7 @@
 # include <math.h>
 # include <random>
 # include <cstdlib>
+#include <dirent.h>
 //# include <thread>
 //# include <algorithm> 
 //# include <vector>
@@ -25,19 +26,22 @@ using namespace std;
 
 
 // Define global variables
-const double bdratio = 0.5;
-const double _maxsize = 2e7;
-const int _seed = 117;
-const double _s = 0.1;
+const double _maxsize = 2.5e7;
+const int _seed = 120;
+const double _s = 0.5;
 const double _ut = 2.0;
 const double _ud = 0.2;
 const double _ur = 1e-4;
-const double r_death = bdratio * log(2.0);		// Death model 1
-const int model = 1;
+const int div_model = 3;
+const int adv_model = 3;
+
+const double bdratio = 1.0/12.0;
+const double r_surv = bdratio * log(2.0);		// Clonal survival rate
+const double r_death = 0.5 * log(2.0);		// Intrinsic cell death rate
 const int NEIGHBOURHOOD = 26;
 
-double radius_double, t, max_birth, ran;
-int radius, Ntot, iter, x, y, z, cell_x, cell_y, cell_z, r_birth, empty_neighbours, dir, queue, range, xrange, yrange, zrange, x_b, y_b, z_b;
+double radius_double, t, max_birth, ran, r_birth;
+int radius, Ntot, iter, x, y, z, cell_x, cell_y, cell_z, empty_neighbours, dir, queue, range, xrange, yrange, zrange, x_b, y_b, z_b;
 
 
 
@@ -227,6 +231,32 @@ void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
 
 }	
 
+void compute_birthrate(Cell cell , int model_number , double *r_birth , double sel_adv)
+{
+
+	*r_birth = 0.0;
+
+	if (model_number == 1) *r_birth = pow( (1.0 + sel_adv) , cell.dvr );
+
+	else if (model_number == 2) *r_birth = pow( (1.0 + sel_adv) , (cell.dvr - cell.res) );
+
+	else if (model_number == 3)
+	{
+		*r_birth = 1.0;
+		for (int k = 1; k < cell.dvr + 1; k++)
+		{
+			(*r_birth) *= 1.0 + (sel_adv/(double)k);
+		}
+	}
+
+	else if (model_number == 4)
+	{
+		if (cell.dvr <= 3) *r_birth = pow( (1.0 + sel_adv) , cell.dvr );
+		else *r_birth = pow( (1.0 + sel_adv) , 3 ) * (pow( (1.0 + (sel_adv)/50.0) , (cell.dvr - 3) ));
+	}
+
+}	
+
 
 
 /*******************************************************************************/
@@ -237,9 +267,8 @@ void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
 int main(int argc, char const *argv[])
 {
 
+	// Query number of available cores
 	//unsigned concurentThreadsSupported = std::thread::hardware_concurrency();
-	//cout << "This machine has " << concurentThreadsSupported << " cores." << endl;
-	//exit(0);
 
 
 	// Reset time and tumour size variables
@@ -249,6 +278,7 @@ int main(int argc, char const *argv[])
 
 	// Seed random number generator
 	srand48(_seed);
+
 
 
 	//================== Initialise tumour ====================//
@@ -293,19 +323,31 @@ int main(int argc, char const *argv[])
 	Ntot += 1;
 
 
+
+
 	//================== Open data files ==================//
+
+	DIR *dir = opendir("./DATA");
+	if(dir)
+	{
+		system("mkdir ./DATA");
+	}
+
 	ofstream NversusT_file;
 	stringstream f;
-	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" << _ut << "_ud=" << _ud << "_ur=" << _ur << "_model=" << model << "_N(t).dat";
+	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" 
+		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model << "_N(t).dat";
 	NversusT_file.open(f.str().c_str());
 
 	ofstream tumour_file;
 	f.str("");
-	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" << _ut << "_ud=" << _ud << "_ur=" << _ur << "_model=" << model << ".dat";
+	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" 
+		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model << ".csv";
 	tumour_file.open(f.str().c_str());
 
 	cout << " " << endl;
 	cout << "Created output files..." << endl;
+
 
 
 
@@ -348,20 +390,33 @@ int main(int argc, char const *argv[])
 		while (tumour[cell_x][cell_y][cell_z].dvr == -1);
 		
 
-		// Compute birth and death rate of cell (params[3] is the selective advantage of a single driver mutation)
-		//r_birth = pow( (log(2.0)*(1.0 + _s)) , tumour[cell_x][cell_y].dvr );		// Birth model 1
-		r_birth = pow( (log(2.0)*(1.0 + _s)) , (tumour[cell_x][cell_y][cell_z].dvr - tumour[cell_x][cell_y][cell_z].res) );		// Birth model 2	
+		// Compute birth rate of cell
+		compute_birthrate( tumour[cell_x][cell_y][cell_z] , adv_model , &r_birth , _s );		
 
 
 		// Update maximal birth and death rate of all cells 
 		if (r_birth > max_birth) max_birth = r_birth;
 
 
-		// Cell divides with proability r_birth/max_birth
+		// Query the cell's position in the cell cycle (i.e. if it is ready to divide)
 		if (drand48() < (r_birth/max_birth))
 		{
-			if (model == 1) MODEL1_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
-			else if (model == 2) 
+
+			// First the cell is given the option to die
+			if (drand48() < (r_surv/max_birth))
+			{
+				// Delete cell from tumour
+				tumour[cell_x][cell_y][cell_z].setDVR(-1);
+				tumour[cell_x][cell_y][cell_z].setRES(-1);
+				tumour[cell_x][cell_y][cell_z].setPGR(-1);
+
+				// Size of tumour is reduced by 1
+				Ntot -= 1;
+			}
+
+			// Otherwise cell successfully divides
+			else if (div_model == 1) MODEL1_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
+			else if (div_model == 2) 
 			{
 				empty_neighbours = 0;
 
@@ -390,11 +445,14 @@ int main(int argc, char const *argv[])
 				}
 
 			}
-			else if (model == 3) MODEL3_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
+			else if (div_model == 3) MODEL3_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
 		}
 
-		else if (drand48() < (r_death/max_birth))
+
+		// Ask if the cell dies (intrinsic death rate)
+		if (drand48() < (r_death/max_birth))
 		{
+
 			// Delete cell from tumour
 			tumour[cell_x][cell_y][cell_z].setDVR(-1);
 			tumour[cell_x][cell_y][cell_z].setRES(-1);
@@ -403,6 +461,7 @@ int main(int argc, char const *argv[])
 			// Size of tumour is reduced by 1
 			Ntot -= 1;
 		}
+
 	
 		// Progress time variable
 		t += 1.0/(max_birth * Ntot);
@@ -426,6 +485,7 @@ int main(int argc, char const *argv[])
 
 	cout << " " << endl;
 
+/*
 	// Write tumour data to file
 	for (int i = 0; i < (2*radius); ++i)
 	{
@@ -442,7 +502,25 @@ int main(int argc, char const *argv[])
 		printf("Writing data... %i%%\r", (int)((i+1)*100.0/(2*radius)));
 		fflush(stdout);
 	}
+*/
 
+	// Write tumour data to file
+	tumour_file << "x coord, y coord, z coord, drivers, resistant, passengers" << endl;
+	for (int i = 0; i < (2*radius); ++i)
+	{
+		for (int j = 0; j < (2*radius); ++j)
+		{
+			for (int k = 0; k < (2*radius); ++k)
+			{
+				if (tumour[i][j][k].dvr != -1)
+				{
+					tumour_file << i << "," << j << "," << k << "," << tumour[i][j][k].dvr << "," << tumour[i][j][k].res << "," << tumour[i][j][k].pgr << endl;
+				}
+			}	
+		}
+		printf("Writing data... %i%%\r", (int)((i+1)*100.0/(2*radius)));
+		fflush(stdout);
+	}
 
 	NversusT_file.close();
 	tumour_file.close();
