@@ -506,16 +506,13 @@ int main(int argc, char const *argv[])
 
 	// Write tumour data to file
 	tumour_file << "x coord, y coord, z coord, drivers, resistant, passengers" << endl;
-	for (int i = 0; i < (2*radius); ++i)
+	for (int i = (radius - x_b - 1); i < (radius + x_b + 2); ++i)
 	{
-		for (int j = 0; j < (2*radius); ++j)
+		for (int j = (radius - y_b - 1); j < (radius + y_b + 2); ++j)
 		{
-			for (int k = 0; k < (2*radius); ++k)
+			for (int k = (radius - z_b - 1); k < (radius + z_b + 2); ++k)
 			{
-				if (tumour[i][j][k].dvr != -1)
-				{
-					tumour_file << i << "," << j << "," << k << "," << tumour[i][j][k].dvr << "," << tumour[i][j][k].res << "," << tumour[i][j][k].pgr << endl;
-				}
+				tumour_file << i << "," << j << "," << k << "," << tumour[i][j][k].dvr << "," << tumour[i][j][k].res << "," << tumour[i][j][k].pgr << endl;
 			}	
 		}
 		printf("Writing data... %i%%\r", (int)((i+1)*100.0/(2*radius)));
@@ -524,6 +521,10 @@ int main(int argc, char const *argv[])
 
 	NversusT_file.close();
 	tumour_file.close();
+
+	cout << "" << endl;
+	cout << "Wrote ./" << f.str().c_str() << endl;
+	cout << "" << endl;
 
 	return 0;
 }
