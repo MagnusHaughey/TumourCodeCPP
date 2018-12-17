@@ -33,7 +33,7 @@ const double _ut = 2.0;
 const double _ud = 0.2;
 const double _ur = 1e-4;
 const int div_model = 3;
-const int adv_model = 3;
+const int adv_model = 4;
 
 const double bdratio = 1.0/12.0;
 const double r_surv = bdratio * log(2.0);		// Clonal survival rate
@@ -327,22 +327,34 @@ int main(int argc, char const *argv[])
 
 	//================== Open data files ==================//
 
-	DIR *dir = opendir("./DATA");
-	if(dir)
+	DIR *dir1 = opendir("./DATA");
+	if(!dir1)
 	{
 		system("mkdir ./DATA");
 	}
 
-	ofstream NversusT_file;
 	stringstream f;
 	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" 
-		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model << "_N(t).dat";
+		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model;
+	DIR *dir2 = opendir(f.str().c_str());
+	if(!dir2)
+	{
+		f.str("");
+		f << "mkdir ./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" 
+		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model;
+		system(f.str().c_str());
+	}
+
+	ofstream NversusT_file;
+	f.str("");
+	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" 
+		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model << "/N(t).dat";
 	NversusT_file.open(f.str().c_str());
 
 	ofstream tumour_file;
 	f.str("");
 	f << "./DATA/maxsize="<< _maxsize << "_seed=" << _seed << "_s=" << _s << "_ut=" 
-		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model << ".csv";
+		<< _ut << "_ud=" << _ud << "_ur=" << _ur << "_divmodel=" << div_model << "_advmodel=" << adv_model << "/tumour.csv";
 	tumour_file.open(f.str().c_str());
 
 	cout << " " << endl;
@@ -523,7 +535,7 @@ int main(int argc, char const *argv[])
 	tumour_file.close();
 
 	cout << "" << endl;
-	cout << "Wrote ./" << f.str().c_str() << endl;
+	cout << "Wrote " << f.str().c_str() << endl;
 	cout << "" << endl;
 
 	return 0;

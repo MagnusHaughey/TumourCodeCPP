@@ -30,8 +30,8 @@ print("\rImporting Python/NumPy modules... done.")
 #================== Read in import data file from command line ===================#
 println("")
 print("Reading tumour data...")
-infile = ARGS[1]
-infile = string("./DATA/" , infile)
+path = ARGS[1]
+infile = string(path , "/tumour.csv")
 data = np.loadtxt( infile , unpack=true , delimiter="," , skiprows=1 , usecols=(0,1,2,4))
 
 # Create x, y, z, GA vectors
@@ -73,12 +73,28 @@ if ((slice_fraction < 0.0) || (slice_fraction > 1.0))
 end
 
 
+xmin = findmin(x)[1]
+ymin = findmin(y)[1]
+zmin = findmin(z)[1]
+
+xmax = findmax(x)[1]
+ymax = findmax(y)[1]
+zmax = findmax(z)[1]
+
+
+
 if (slice[1] == 'x')
-	slice_val = findmin(x)[1] + float_to_int( (findmax(x)[1] - findmin(x)[1])*slice_fraction )
+	slice_val = xmin + float_to_int( (xmax - xmin)*slice_fraction )
+	sliced_tumour = fill(-1.0 , (float_to_int( ymax - ymin + 1  ),float_to_int( zmax - zmin + 1 )) )
+
 elseif (slice[1] == 'y')
-	slice_val = findmin(y)[1] + float_to_int( (findmax(y)[1] - findmin(y)[1])*slice_fraction )
+	slice_val = ymin + float_to_int( (ymax - ymin)*slice_fraction )
+	sliced_tumour = fill(-1.0 , (float_to_int( xmax - xmin + 1  ),float_to_int( zmax - zmin + 1 )) )
+
 elseif (slice[1] == 'z')
-	slice_val = findmin(z)[1] + float_to_int( (findmax(z)[1] - findmin(z)[1])*slice_fraction )
+	slice_val = zmin + float_to_int( (zmax - zmin)*slice_fraction )
+	sliced_tumour = fill(-1.0 , (float_to_int( xmax - xmin + 1  ),float_to_int( ymax - ymin + 1 )) )
+
 else
 	println("Error with 2nd argument. Co-ordinate must x, y or z. Exiting...")
 	exit(0)
@@ -91,27 +107,31 @@ GAdata = []
 if (slice[1] == 'x')
 	for i in 1:length(x)
 		if (x[i] == slice_val)
-			push!(slice1 , y[i])
-			push!(slice2 , z[i])
-			push!(GAdata , res[i])
+			sliced_tumour[float_to_int(y[i] - ymin) + 1 , float_to_int(z[i] - zmin) + 1] = res[i]
+			#push!(slice1 , y[i])
+			#push!(slice2 , z[i])
+			#push!(GAdata , res[i])
+			#print("\rSlicing data... $(i*100.0/(dim^2))%")
 		end
 	end
 
 elseif (slice[1] == 'y')
 	for i in 1:length(y)
 		if (y[i] == slice_val)
-			push!(slice1 , x[i])
-			push!(slice2 , z[i])
-			push!(GAdata , res[i])
+			sliced_tumour[float_to_int(x[i] - xmin) + 1 , float_to_int(z[i] - zmin) + 1] = res[i]
+			#push!(slice1 , x[i])
+			#push!(slice2 , z[i])
+			#push!(GAdata , res[i])
 		end
 	end
 
 else
 	for i in 1:length(z)
 		if (z[i] == slice_val)
-			push!(slice1 , x[i])
-			push!(slice2 , y[i])
-			push!(GAdata , res[i])
+			sliced_tumour[float_to_int(x[i] - xmin) + 1 , float_to_int(y[i] - ymin) + 1] = res[i]
+			#push!(slice1 , x[i])
+			#push!(slice2 , y[i])
+			#push!(GAdata , res[i])
 		end
 	end
 end
@@ -130,13 +150,94 @@ print("\rSlicing data... done.")
 println("")
 print("Finding boundaries...")
 
-dim = float_to_int(length(GAdata)^(0.5))
+
 boundary = []
 
-for i in 1:length(GAdata)
-	if (GAdata[i] != 0)		# find mutated cell in vector
 
-		if ( ((i == 1) || (i == length(GAdata))) && (GAdata[i] == 1.0) )		# If cell has mutation and is on the edge of the tumour
+for i in 1:size(sliced_tumour)[1]
+	for j in 1:size(sliced_tumour)[2]
+
+		if (sliced_tumour[i,j] > 0.0)
+
+			# Check 8 nearest neighbours
+			if ( (i > 1) && (j > 1) && (i < size(sliced_tumour)[1]) && (j < size(sliced_tumour)[2]) )
+				for x in -1:1
+					for y in -1:1
+
+						if ((x == 0) && (y == 0)) 
+							#println("$(i+x) , $(j+y) ***") 
+							continue 
+						end
+
+						#println("$(i+x) , $(j+y)")
+						if ( (sliced_tumour[i+x , j+y] <= 0.0) && !((i,j,sliced_tumour[i,j]) in boundary) )
+							push!(boundary , (i , j , sliced_tumour[i,j]))
+							continue
+						end
+					end
+				end
+
+			elseif ((i > 1) || (j > 1) || (i < size(sliced_tumour)[1]) || (j < size(sliced_tumour)[2]))
+				push!(boundary , (i , j , sliced_tumour[i,j]))
+				continue
+			end
+
+		end
+	end
+end
+
+
+
+
+#=
+for i in 1:length(GAdata)
+	if (GAdata[i] > 0.0)		# find mutated cell in vector
+		print("---------------------------------\n")
+		println("$(slice1[i]) , $(slice2[i])")
+
+		# Check 8 nearest neighbours
+		if ( (i > 1) && (i < length(GAdata)) )
+			if ( (GAdata[i-1] <= 0.0) || (GAdata[i+1] <= 0.0) )
+
+				println("$(slice1[i-1]) , $(slice2[i-1])")
+				println("$(slice1[i+1]) , $(slice2[i+1])")
+				
+				push!(boundary , (slice1[i] , slice2[i] , GAdata[i]))
+				continue	
+			
+			end
+		end
+
+		if ( (i > (dim + 1)) && (i < length(GAdata) - dim) )
+			for j in -1:1
+
+				if ((GAdata[i-dim+j] <= 0.0) || (GAdata[i+dim+j] <= 0.0))
+					println("$(slice1[i-dim+j]) , $(slice2[i-dim+j])")
+					println("$(slice1[i+dim+j]) , $(slice2[i+dim+j])")
+
+					push!(boundary , (slice1[i] , slice2[i] , GAdata[i]))
+					continue
+				
+				end
+			end
+		end
+
+
+		# Take care of boundary cells
+		if ( (i == 1) || (i == length(GAdata)) )
+
+			push!(boundary , (slice1[i] , slice2[i] , GAdata[i]))
+			continue
+
+		elseif !(i > (dim + 1)) || !(i < length(GAdata) - dim)
+
+			push!(boundary , (slice1[i] , slice2[i] , GAdata[i]))
+			continue
+
+		end
+
+#=
+		if ( ((i == 1) || (i == length(GAdata))) && (GAdata[i] >= 1.0) )		# If cell has mutation and is on the edge of the tumour
 			push!(boundary , (slice1[i] , slice2[i] , GAdata[i]))
 			continue
 
@@ -156,9 +257,12 @@ for i in 1:length(GAdata)
 			end
 
 		end
+
+
+=#
 	end
 end
-
+=#
 print("\rFinding boundaries... done.")
 
 
@@ -169,15 +273,20 @@ println("")
 print("Writing data...")
 
 # Write 2D sliced data
-outfile = string(infile[1:length(infile)-4] , "_" , slice , "_raw.csv" )
+outfile = string(path , "/" , slice , "_raw.csv" )
 open(outfile, "w") do f
-	for i in 1:length(GAdata)
-		if ( GAdata[i] != -1.0 ) write( f , "$(slice1[i]),$(slice2[i]),$(GAdata[i])\n") end
+	#for i in 1:length(GAdata)
+	#	if ( GAdata[i] != -1.0 ) write( f , "$(slice1[i]),$(slice2[i]),$(GAdata[i])\n") end
+	#end
+	for i in 1:size(sliced_tumour)[1]
+		for j in 1:size(sliced_tumour)[2]
+			if ( sliced_tumour[i,j] != -1.0 ) write( f , "$i,$j,$(sliced_tumour[i,j])\n") end
+		end
 	end
 end
 
 # Write boundary data
-outfile = string(infile[1:length(infile)-4] , "_" , slice , "_boundaries.csv" )
+outfile = string(path , "/" , slice , "_boundaries.csv" )
 open(outfile, "w") do f
 	for point in boundary
 		write( f , "$(point[1]),$(point[2]),$(point[3])\n")
