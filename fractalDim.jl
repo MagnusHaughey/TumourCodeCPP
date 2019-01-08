@@ -80,31 +80,46 @@ print("\rImporting Python/NumPy modules... done.")
 println("")
 print("Reading tumour data...")
 path = ARGS[1]
-infile = string(path , "/" , ARGS[2] , "_boundaries.csv")
-data = np.loadtxt( infile , unpack=true , delimiter="," , usecols=(0,1))
+infile = string(path , "/" , ARGS[2] , "_sepBoundaries.csv")
+data = np.loadtxt( infile , unpack=true , delimiter="," , usecols=(0,1,2))
 
-# Create x, y, z, GA vectors
-data_set = length(data)/2
-x1 = fill(0.0 , float_to_int(data_set))
-x2 = fill(0.0 , float_to_int(data_set))
+# Construct and populate subclones array
+minX = findmax(data)[1]
+minY = findmax(data)[1]
+maxX = 0
+maxY = 0
+
+for i in 1:length(data)
+	if ( ((i-3)%3) == 0 )
+		if (data[i-2] < minX) global minX = data[i-2] end
+		if (data[i-2] > maxX) global maxX = data[i-2] end
+		if (data[i-1] < minY) global minY = data[i-1] end
+		if (data[i-1] > maxY) global maxY = data[i-1] end
+	end
+end
+
+
+sizeX = float_to_int(maxX - minX) + 1
+sizeY = float_to_int(maxY - minY) + 1
+subclones = fill(0.0 , (sizeX,sizeY))
 
 # Unpack into separate x, y, z, GA vectors
 for i in 1:length(data)
-	if ( ((i-1)%2) == 0 ) x1[float_to_int(((i-1)/2)+1)] = data[i] 
-	elseif ( ((i-2)%2) == 0 ) x2[float_to_int(((i-2)/2)+1)] = data[i] 
+	if ( ((i-3)%3) == 0 )
+		subclones[float_to_int(data[i-2]-minX+1), float_to_int(data[i-1]-minY+1)] = data[i]
 	end
 end
 
 print("\rReading tumour data... done.")
 
 
-
+#=
 #================== Separate different sub-clones ===================#
 println("")
 print("Separating sub-clones...")
 
 sizeX = float_to_int(findmax(x1)[1] - findmin(x1)[1]) + 1
-sizeY = float_to_int(findmax(x2)[1] - findmin(x2)[1]) + 1
+sizeY = float_to_int(findmax(x2)[1] - findmin(x2)[1]) + 1 
 subclones = fill(0.0 , (sizeX,sizeY))
 
 #print(sizeX)
@@ -259,7 +274,7 @@ open(outfile, "w") do f
 end
 
 print("\rWriting data... done.")
-
+=#
 
 
 
@@ -315,13 +330,33 @@ for label in 1:findmax(subclones)[1]
 
 	# Compute fractal dimension of given sub-clone
 	gridsize = min(maxX , maxY)
-	#print("XXXXXX $gridsize")
+	
+	println("")
+#=
 	while(gridsize > 0)
+		print("\rBox size = $gridsize")
 		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
 		push!(grids , gridsize)
 		gridsize -= 1
 	end
+=#
 
+
+### For particularly large structures, only use a selection of box sizes
+	while(gridsize > (gridsize = 100)))
+		print("\rBox size = $gridsize")
+		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
+		push!(grids , gridsize)
+		gridsize -= 1
+	end
+	gridsize = 1
+	while(gridsize < 100))
+		print("\rBox size = $gridsize")
+		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
+		push!(grids , gridsize)
+		gridsize += 1
+	end
+############
 
 
 	# Calcualte fractal dimension

@@ -191,6 +191,151 @@ print("\rFinding boundaries... done.")
 
 
 
+#================== Separate different sub-clones ===================#
+println("")
+print("Separating sub-clones...")
+
+x1 = []
+x2 = []
+for point in boundary
+	push!(x1, point[1])
+	push!(x2, point[2])
+end
+	
+sizeX = float_to_int(findmax(x1)[1] - findmin(x1)[1]) + 1
+sizeY = float_to_int(findmax(x2)[1] - findmin(x2)[1]) + 1
+subclones = fill(0.0 , (sizeX,sizeY))
+
+#print(sizeX)
+#println("\n")
+
+minX = float_to_int(findmin(x1)[1])
+minY = float_to_int(findmin(x2)[1])
+
+#println("$minX , $minY")
+new = 0
+
+for i in 1:length(x1)
+
+	#println("--------------------------------------")
+	#println("$(x1[i]) , $(x2[i])")
+
+	assigned = false
+	coordX = float_to_int(x1[i])-minX+1
+	coordY = float_to_int(x2[i])-minY+1
+	#println(" ($(x1[i]) , $(x2[i])) --- ($(coordX) , $(coordY)) ")
+	
+	# Check if any neighbours of this cell is contained within an established sub-clone 
+	for x in -1:1
+
+		#if (assigned) break end	
+
+		for y in -1:1
+
+			#if (assigned) break end
+
+			if ((x == 0) && (y == 0)) continue end
+
+			# Take care of boundaries
+			if ( (coordX+x < 1) || (coordX+x > sizeX) || (coordY+y < 1) || (coordY+y > sizeY) )
+				continue
+			end
+
+			# Check neighbours
+			if ( subclones[coordX+x , coordY+y] != 0.0 )
+
+				if !(assigned)
+					subclones[coordX , coordY] = subclones[coordX+x , coordY+y]
+					assigned = true
+				
+				# Join any subclones up if they are really part of the same subclone
+				elseif ( (subclones[coordX , coordY] != subclones[coordX+x , coordY+y]) && (subclones[coordX+x , coordY+y] != 0) )
+					#println("CLASH BETWEEN ($coordX , $coordY)=$(subclones[coordX , coordY]) and ($(coordX+x) , $(coordY+y))=$(subclones[coordX+x , coordY+y])\n")
+					for j in 1:size(subclones)[1]
+						for k in 1:size(subclones)[2]
+							if (subclones[j,k] == subclones[coordX+x , coordY+y])
+								subclones[j,k] = subclones[coordX , coordY]
+
+							end
+						end
+					end
+
+				end
+			end
+		end
+	end
+
+	if !(assigned)
+		global new += 1
+		subclones[coordX , coordY] = new
+	end
+
+end
+
+
+# Clean up
+for q in 1:size(subclones)[1]
+	for r in 1:size(subclones)[2]
+		
+		for x in -1:1
+			for y in -1:1
+
+				if ((x == 0) && (y == 0)) continue end
+
+				# Take care of boundaries
+				if ( (q+x < 1) || (q+x > sizeX) || (r+y < 1) || (r+y > sizeY) )
+					continue
+				end
+
+				if ( (subclones[q,r] != subclones[q+x , r+y]) && (subclones[q+x , r+y] != 0) && (subclones[q,r] != 0) )
+					for j in 1:size(subclones)[1]
+						for k in 1:size(subclones)[2]
+							if (subclones[j,k] == subclones[q+x , r+y])
+								subclones[j,k] = subclones[q , r]
+
+							end
+						end
+					end
+				end
+
+			end
+		end
+
+	end
+end
+
+
+
+# Re-sort sub clone labels
+for i in 1:(new-2)
+
+	next_label = 0
+
+	if !(i in subclones)
+		#println("\n!!! i=$i")
+
+		for q in (i+1):(new-1)
+			if (q in subclones) next_label = q end 
+		end
+		#print("\n$next_label")
+
+		if (next_label != 0)
+			for j in 1:size(subclones)[1]
+				for k in 1:size(subclones)[2]
+					if (subclones[j,k] == next_label) subclones[j,k] = i end
+				end
+			end
+		end
+	end
+end
+
+
+
+
+print("\rSeparating sub-clones... done.")
+
+
+
 
 #================== Write sub-clone boundary data ===================#
 println("")
@@ -210,10 +355,16 @@ open(outfile, "w") do f
 end
 
 # Write boundary data
-outfile = string(path , "/" , slice , "_boundaries.csv" )
+outfile = string(path , "/" , ARGS[2] , "_sepBoundaries.csv" )
 open(outfile, "w") do f
-	for point in boundary
-		write( f , "$(point[1]),$(point[2]),$(point[3])\n")
+
+	for i in 1:size(subclones)[1]
+		for j in 1:size(subclones)[2]
+
+			if (subclones[i,j] > 0.0)
+				write( f , "$(i+minX-1),$(j+minY-1),$(subclones[i,j])\n")
+			end
+		end
 	end
 end
 
