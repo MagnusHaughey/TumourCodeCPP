@@ -1,0 +1,106 @@
+\documentclass[12pt]{article}
+\usepackage[english]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{cite}
+\usepackage{setspace}
+\usepackage{empheq}
+
+\newcommand*\widefbox[1]{\fbox{\hspace{2em}#1\hspace{2em}}}
+\def\doubleunderline#1{\underline{\underline{#1}}}
+
+\makeatletter
+\newcommand*\bigcdot{\mathpalette\bigcdot@{.5}}
+\newcommand*\bigcdot@[2]{\mathbin{\vcenter{\hbox{\scalebox{#2}{$\m@th#1\bullet$}}}}}
+\makeatother
+
+\begin{document}
+\section*{\today}
+\subsection*{Birth/growth models}
+
+The code includes functionality for three different growth models \textit{i.e.} three ways in which the tumour can expand. These are largely based on those detailed in ``M. A. Nowak \textit{et al.}, Nature, \textbf{525}, 261-264 (2015)". In all cases, the ``neighbourhood" of a cell in the simulation is considered to be all 26 of the cell's nearest- and next-nearest-neighbours. Each neighbour is weighted equally so that, disregarding any specific constraints on the directions specific to the different growth models, a parent cell will place its progeny into any of its 26 neighbours with equal probability. \\
+
+\indent \textbf{--- Volumetric growth with ``straight line" displacement (Model 1)}
+
+The ``volumetric" description of this growth model, and indeed the subsequently described models, refers to the fact that, in principle, any cell within the tumour can divide. This is different to ``surface growth" models, in which only cells at near the surface of the tumour may divide.
+
+\indent In this model if a cell is ready to divide, it does so with unit probability. A neighbouring cell is chosen at random into which the daughter cell will be placed, and a vector is defined which points along the direction of the daughter cell relative the position of the parent cell. The parent cell will then count all tumour cells which occupy lattice sites along this vector up to the first unoccupied lattice site and ``push" or ``displace" all of these cells along one lattice site in the direction of the vector. This process produces an unoccupied lattice site next to the parent cell into which the daughter cell can be placed.\\
+\begin{figure}[h!]
+  \includegraphics[width=\linewidth]{./GrowthModel1.png}
+  \caption{\small{2-D illustration of the displacement process in model 1 division. Tumour cells are depicted by grey squares and unoccupied lattice points by white squares. \textbf{(a)} A parent cell (red) is chosen to divide (represented by the straight arrow), and the location of the 2\textsuperscript{nd} daughter cell is chosen (the remaining daughter cell occupies the current position of the parent cell). \textbf{(b)} The chain of occupied cells is shifted one unit away from the parent cell, resulting in an unoccupied lattice point to be filled by the 2\textsuperscript{nd} daughter cell. \textbf{(c)} The parent cell divides, and places its daughter cells into the parent cell's current position and into the newly formed empty neighbouring lattice point.}}
+  \label{fig:boat1}
+\end{figure}
+ 
+ \clearpage
+
+
+\indent \textbf{--- Volumetric growth with no displacement, growth \underline{not} proportional to empty neighbours (Model 2)}
+
+In the second model when a cell is ready to divide, it divides with with unit probability as long as it has at least one empty neighbour. The program queries the number of empty cells in the neighbourhood of the parent cell and then chooses one empty neighbouring lattice point in which to place the 2\textsuperscript{nd} daughter cell. The empty neighbour is chosen with flat probability. The cell will not divide only if it is completely surrounded by other tumour cells \textit{i.e.} occupied lattice sites.\\
+
+\indent \textbf{--- Volumetric growth with no displacement, growth proportional to empty neighbours (Model 3)}
+
+In the final model the chosen parent cell will divide with a probability proportional to the number of empty neighbouring cells. This is achieved by selecting the direction in which the parent cell should divide at random from all its neighbouring directions and, if this lattice point is unoccupied, placing the 2\textsuperscript{nd} daughter cell in this lattice point. In doing so each parent cell will divide with probability $P_{div} = \delta \times \frac{1}{26}$ (in 3-D) where $\delta$ denotes the number of \textit{empty} lattice points in the neighbourhood of the parent cell.\\
+
+
+\subsection*{Driver models}
+
+There are four available models driver accumulation, and fitness advantage conferred by driver mutations. These are based on those presented in ``C. Paterson, M. A. Nowak, and B. Waclaw, Sci. Rep. \textbf{6}, 39511 (2016)". A brief description of each model is given below. In the following, $s > 0$ denotes the \textit{selective advantage} and is usually chosen to be approximately within the range $0.05 < s <0.25$. The birth rate of the $i$\textsuperscript{th} cell, carrying $k$ \textit{driver mutations}, is denoted $b_{i}$ and the birth rate of the initial cell (with no genetic mutations) is denoted $B$.\\
+
+\indent \textbf{---  Aggregate model (Model 1)}
+
+The first model simply assumes that cells with $k$ driver mutations have a birth rate which is $(1+s)$\% greater than cells with $k-1$ driver mutations. That is:
+
+\begin{equation*}
+b_{i} = B\cdot(1+s)^{k}
+\end{equation*}\\
+
+\indent \textbf{--- Aggregate model with resistant penalty (Model 2)}
+
+The second model is similar to the first, with the exception that the number of resistant mutations carried by the cell confers a fitness penalty. The birth rate of a cell with $k$ driver mutations and $r$ resistant mutations is:
+
+\begin{equation*}
+b_{i} = B\cdot(1+s)^{k-r}
+\end{equation*}\\
+
+\clearpage
+
+\indent \textbf{--- Slow-down model (Model 3)}
+
+This model is a slight modification of Model 1, in which cells with $k$ driver mutations have a birth rate which is $(1+\frac{s}{k})$\% greater than cells with $k-1$ driver mutations. The birth rate of the \textit{i}\textsuperscript{th} cell with \textit{k} driver mutations is:\\
+
+\[
+ b_{i} = 
+ \begin{cases} 
+      B & for \quad k = 0 \\
+      B\cdot \big[ \sum^{k}_{q=1} (1+\frac{s}{q}) \big] & for \quad k > 0
+   \end{cases}
+\]\\
+
+\indent \textbf{--- Drop-off model (Model 4)}
+
+Similarly to Model 3, the relative increase of the birth rate of cells in Model 4 decreases with the number of driver mutations $k$. Unlike the previous model, however, the relative decrease in the fitness advantage conferred by a new driver mutation is abrupt. Once a cell has acquired more than four driver mutations, the relative increase in its fitness advantage is small for all subsequent driver mutations. The birth rate is computed as:\\
+
+\[
+ b_{i} = 
+ \begin{cases} 
+      B\cdot(1+s)^{k}& for \quad k \leq 3 \\
+      B\cdot(1+s)^{3}(1+\frac{s}{2})^{k-3}& for \quad k > 3
+   \end{cases}
+\]\\
+
+\noindent The factor of $\frac{s}{2}$ in the expression for $k > 3$ is rather arbitrary and the fraction used here may be tuned in future implementations of the code.
+ 
+\begin{figure}[h!]\centering
+  \includegraphics[width=4.2in]{./birth_rates.png}
+  \caption{\small{Plot of the birth rates as a function of the number of driver mutations computed in models 1, 3 and 4 described above. The birth rate of the initial cell is set to $B=1.0$.}}
+  \label{fig:boat1}
+\end{figure}
+
+
+
+
+\end{document}
