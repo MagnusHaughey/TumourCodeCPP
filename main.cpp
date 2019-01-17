@@ -27,13 +27,15 @@ using namespace std;
 
 // Define global variables
 const double _maxsize = 2.5e7;
-const int _seed = 120;
-const double _s = 0.5;
+const int _seed = 126;
+const double _s = 0.1;
 const double _ut = 2.0;
-const double _ud = 0.2;
+const double _ud = 0.1;
 const double _ur = 1e-4;
 const int div_model = 3;
 const int adv_model = 4;
+
+const bool death = true;
 
 const double bdratio = 1.0/12.0;
 const double r_surv = bdratio * log(2.0);		// Clonal survival rate
@@ -41,7 +43,7 @@ const double r_death = 0.5 * log(2.0);		// Intrinsic cell death rate
 const int NEIGHBOURHOOD = 26;
 
 double radius_double, t, max_birth, ran, r_birth;
-int radius, Ntot, iter, x, y, z, cell_x, cell_y, cell_z, empty_neighbours, dir, queue, range, xrange, yrange, zrange, x_b, y_b, z_b;
+int radius, Ntot, iter, x, y, z, cell_x, cell_y, cell_z, empty_neighbours, dir, queue, range, xrange, yrange, zrange, x_b, y_b, z_b, res_mut;
 
 
 
@@ -98,9 +100,14 @@ class Cell
 
 	void newGAs()
 	{
+		res_mut = poisson_r(generator);
+
 		this->dvr += poisson_d(generator);
-		this->res += poisson_r(generator);
+		this->res += res_mut;
 		this->pgr += poisson_t(generator);
+
+		// If resistant mutation occurs, disallow any further resistant mutations by setting average of Poisson distribution to zero
+		if (res_mut != 0) poisson_distribution<int> poisson_r(0.0);
 	}
 
 
@@ -213,7 +220,7 @@ void MODEL3_divide(Cell *** tumour , int cell_x , int cell_y , int cell_z  , int
 
 }
 
-
+/*
 void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
 {
 
@@ -230,6 +237,8 @@ void get_range( Cell *** tumour , int *range , int radius , int axis[3] )
 	else *range = radius;
 
 }	
+*/
+
 
 void compute_birthrate(Cell cell , int model_number , double *r_birth , double sel_adv)
 {
@@ -414,8 +423,9 @@ int main(int argc, char const *argv[])
 		if (drand48() < (r_birth/max_birth))
 		{
 
+
 			// First the cell is given the option to die
-			if (drand48() < (r_surv/max_birth))
+			if ( (death) && (drand48() < (r_surv/max_birth)) )
 			{
 				// Delete cell from tumour
 				tumour[cell_x][cell_y][cell_z].setDVR(-1);
@@ -424,6 +434,9 @@ int main(int argc, char const *argv[])
 
 				// Size of tumour is reduced by 1
 				Ntot -= 1;
+
+				// Progress time variable
+				t += 1.0/(max_birth * Ntot);
 			}
 
 			// Otherwise cell successfully divides
@@ -457,12 +470,19 @@ int main(int argc, char const *argv[])
 				}
 
 			}
-			else if (div_model == 3) MODEL3_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
+			else if (div_model == 3)
+			{
+				MODEL3_divide(tumour , cell_x , cell_y , cell_z , &Ntot , &x_b , &y_b , &z_b , radius);
+			}
+
+
+			// Progress time variable
+			t += 1.0/(max_birth * Ntot);
 		}
 
 
 		// Ask if the cell dies (intrinsic death rate)
-		if (drand48() < (r_death/max_birth))
+		if ( (tumour[cell_x][cell_y][cell_z].dvr != -1) && (death) && (drand48() < (r_death/max_birth)) )
 		{
 
 			// Delete cell from tumour
@@ -472,11 +492,11 @@ int main(int argc, char const *argv[])
 
 			// Size of tumour is reduced by 1
 			Ntot -= 1;
+
+			// Progress time variable
+			t += 1.0/(max_birth * Ntot);
 		}
 
-	
-		// Progress time variable
-		t += 1.0/(max_birth * Ntot);
 
 
 		// Write total number of cells after regular number of iterations
@@ -497,26 +517,12 @@ int main(int argc, char const *argv[])
 
 	cout << " " << endl;
 
-/*
-	// Write tumour data to file
-	for (int i = 0; i < (2*radius); ++i)
-	{
-		for (int j = 0; j < (2*radius); ++j)
-		{
-			for (int k = 0; k < (2*radius); ++k)
-			{
-				if (tumour[i][j][k].dvr != -1)
-				{
-					tumour_file << i << " " << j << " " << k << " " << tumour[i][j][k].dvr << " " << tumour[i][j][k].res << " " << tumour[i][j][k].pgr << endl;
-				}
-			}	
-		}
-		printf("Writing data... %i%%\r", (int)((i+1)*100.0/(2*radius)));
-		fflush(stdout);
-	}
-*/
+
+
+
 
 	// Write tumour data to file
+	int count = 0;
 	tumour_file << "x coord, y coord, z coord, drivers, resistant, passengers" << endl;
 	for (int i = (radius - x_b - 1); i < (radius + x_b + 2); ++i)
 	{
@@ -525,6 +531,7 @@ int main(int argc, char const *argv[])
 			for (int k = (radius - z_b - 1); k < (radius + z_b + 2); ++k)
 			{
 				tumour_file << i << "," << j << "," << k << "," << tumour[i][j][k].dvr << "," << tumour[i][j][k].res << "," << tumour[i][j][k].pgr << endl;
+				if (tumour[i][j][k].dvr != -1) ++count;
 			}	
 		}
 		printf("Writing data... %i%%\r", (int)((i+1)*100.0/(2*radius)));
@@ -537,6 +544,8 @@ int main(int argc, char const *argv[])
 	cout << "" << endl;
 	cout << "Wrote " << f.str().c_str() << endl;
 	cout << "" << endl;
+
+	cout << "Total number of cells is: " << count << endl; 
 
 	return 0;
 }
