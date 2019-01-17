@@ -61,6 +61,90 @@ function fractalData( input , xBound , yBound , m )
 end
 
 
+#= Calculate fractal dimension data point for a given grid size m
+
+*** Note that the (n+1)th index in the first axis of the Qpr array 
+corresponds to a boxweight, p, of n. This is to avoid indexing the 
+zeroth element of Qpr for boxweight = 0
+
+=#
+
+function lacunarityData( input , subclone_size , xBound , yBound , maxGrid )
+
+
+	Qpr = fill(0.0 , (subclone_size+1 , maxGrid))
+
+	for gridsize in 1:maxGrid
+
+		#if (gridsize%20 != 0) continue end
+
+		print("\rCalculating lacunarity... [$gridsize/$maxGrid]")
+
+		Nr = 0
+		xOffset = 0
+
+		while( (gridsize + xOffset - 1) < xBound )
+
+			yOffset = 0
+
+			while( (gridsize + yOffset - 1) < yBound )
+				boxweight = 0
+				
+				xBegin = xOffset
+				yBegin = yOffset
+				xEnd = gridsize + xOffset - 1
+				yEnd = gridsize + yOffset - 1
+
+				for i in xBegin:xEnd
+					for j in yBegin:yEnd
+						if ([i,j] in input) boxweight += 1 end
+					end
+				end
+
+				Nr += 1
+				Qpr[boxweight+1 , gridsize] += 1
+
+				yOffset += 1
+			end
+
+			xOffset += 1
+		end
+
+		# Normalise distribution
+		for p in 1:size(Qpr)[1]
+			Qpr[p , gridsize] /= Nr
+		end
+
+		#println("r=$gridsize -> N(r)=$Nr")
+
+	end
+
+	
+
+	return Qpr
+
+end
+
+
+
+function pMoments( input , fixed_r , moment )
+
+
+	outval = 0.0
+
+	# Use trapezoid method to compute moment
+	for p in 1:size(input)[1]
+
+		outval += ((p-1)^moment) * input[p , fixed_r]
+
+	end
+
+
+	return outval
+
+end
+
+
 
 
 
@@ -80,6 +164,13 @@ print("\rImporting Python/NumPy modules... done.")
 println("")
 print("Reading tumour data...")
 path = ARGS[1]
+
+# Create directory for lacunarity data files
+lac_path = string( path , "/" , ARGS[2] , "_lacunarity/")
+
+# If directory does not exist create one
+if (!isdir(lac_path)) mkdir(lac_path) end
+
 infile = string(path , "/" , ARGS[2] , "_sepBoundaries.csv")
 data = np.loadtxt( infile , unpack=true , delimiter="," , usecols=(0,1,2))
 
@@ -287,6 +378,7 @@ fractalDims = []
 for label in 1:findmax(subclones)[1]
 	sub = []
 	dfData = []
+	lacData = []
 	grids = []
 	minX = size(subclones)[1]
 	minY = size(subclones)[2]
@@ -325,23 +417,30 @@ for label in 1:findmax(subclones)[1]
 	end
 	maxX -= minX
 	maxY -= minY
+	minX = 0
+	minY = 0
 
 	#println("\n minX=$minX --- minY=$minY --- maxX=$maxX --- maxY=$maxY \n")
 
 	# Compute fractal dimension of given sub-clone
 	gridsize = min(maxX , maxY)
+	maxGrid = gridsize
 	
 	println("")
-#=
+
 	while(gridsize > 0)
+		if (gridsize%2 == 0)
+			gridsize -= 1
+		 	continue
+		 end
 		print("\rBox size = $gridsize")
 		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
 		push!(grids , gridsize)
 		gridsize -= 1
 	end
-=#
 
 
+#=
 ### For particularly large structures, only use a selection of box sizes
 	while(gridsize > (gridsize = 100)))
 		print("\rBox size = $gridsize")
@@ -357,13 +456,42 @@ for label in 1:findmax(subclones)[1]
 		gridsize += 1
 	end
 ############
+=#
 
+
+	# Compute frequency distribution for the number of boxes of size r with a box-mass of p
+	#Qpr = lacunarityData( sub, length(sub) , maxX , maxY , maxGrid )
 
 	# Calcualte fractal dimension
 	grad , yint , r , p , stdErr = st.linregress( np.log(grids) , np.log(dfData) )
 
 	# Append fractal dimension value to array
 	push!( fractalDims , ( label , -grad ) )
+
+#=
+	# Compute moments of Qpr distribution and write lacunarity data to file
+	outfile = string(lac_path , "/subclone#$label" , ".dat" )
+	open(outfile, "w") do f
+
+		for r in 1:maxGrid
+
+			#if (r%20 != 0) continue end
+
+			# Compute first moment of Qpr
+			Z1 = pMoments( Qpr , r , 1 )
+
+			# Compute second moment of Qpr
+			Z2 = pMoments( Qpr , r , 2 )
+
+			lac = Z2/(Z1^2)
+
+			write( f , "$(log(r)) $(log(lac))\n" )
+
+
+		end
+
+	end
+=#
 
 end
 
