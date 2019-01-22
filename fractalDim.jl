@@ -14,59 +14,191 @@ function float_to_int(x)
 end
 
 
-
+#=
 # Calculate fractal dimension data point for a given grid size m
 function fractalData( input , xBound , yBound , m )
-
-	N = 0
 
 	xBoxes = 0
 	yBoxes = 0
 
-	while( (xBoxes*m) < xBound )
+	N_orientations = 0
+	N_cumulative = 0
+	N = 0
 
-		while( (yBoxes*m) < yBound )
+	yOffset = 0
 
-		gland_found = false
+		while(yOffset <= m)
 
-			for i in (xBoxes*m):(m-1+(xBoxes*m))
-				if gland_found break end
+			print("\rBox size = $m; y-offset = $yOffset")
 
-				for j in (yBoxes*m):(m-1+(yBoxes*m))
+			N_orientations += 1
+			N = 0
 
-					if gland_found break end
+			while( (xBoxes*m) < xBound )
 
-					if [i,j] in input
-						N += 1
-						gland_found = true
+				while( (yBoxes*m+yOffset) <= yBound )
+
+
+					if (yBoxes == 0)
+
+						gland_found = false
+
+						for i in (xBoxes*m):(m-1+(xBoxes*m))
+							if gland_found break end
+
+							for j in 0:(yOffset-1)
+
+								if gland_found break end
+
+								if [i,j] in input
+									N += 1
+									#println("Gland found!\n")
+									gland_found = true
+								end
+							end
+						end
 					end
+
+					
+
+						gland_found = false
+
+						for i in (xBoxes*m):(m-1+(xBoxes*m))
+							if gland_found break end
+
+							for j in (yBoxes*m+yOffset):(m-1+(yBoxes*m)+yOffset)
+
+								if gland_found break end
+
+								if [i,j] in input
+									N += 1
+									#println("Gland found!\n")
+									gland_found = true
+								end
+							end
+						end
+					
+
+
+				yBoxes += 1
 
 				end
 
+				xBoxes += 1
+				yBoxes = 0
+
 			end
 
-			yBoxes += 1
+			N_cumulative += N
+			xBoxes = 0
+			yBoxes = 0
+			yOffset += 1
 
 		end
 
-		xBoxes += 1
-		yBoxes = 0
 
+	return (N_cumulative/N_orientations)
+
+end
+=#
+
+
+function fractalData2(Xinput , Yinput , grids )
+
+	println("")
+	Nboxes = []
+
+	for grid in grids
+
+		print("\rBox size = $grid of $(np.max(grids)) ")
+
+		N_orientations = 0
+		N_cumulative = 0
+
+		min_boxcount = (length(Xinput))^2
+
+		# Repeat box counting procedure for many different offsets in both x and y
+		for xOffset in 0:grid
+
+			for yOffset in 0:grid
+
+				N_orientations += 1
+
+				Xinput_offsetted = []
+				Yinput_offsetted = []
+
+				for k in 1:length(Xinput)
+					push!(Xinput_offsetted , (Xinput[k] + xOffset))
+					push!(Yinput_offsetted , (Yinput[k] + yOffset))
+				end
+
+				# Compute 2 dimensional histogram of subclone boundary data 
+				xBins = np.arange(0,(np.max(Xinput)[1]+xOffset+3+grid),grid)
+				yBins = np.arange(0,(np.max(Yinput)[1]+yOffset+3+grid),grid)
+				boxweights, xEdges , yEdges = np.histogram2d( Xinput_offsetted , Yinput_offsetted , bins=(xBins,yBins) )
+
+
+#=
+				if (grid >= 60)
+
+					#println("$(size(boxweights))")
+					tot = 0
+					for i in 1:size(boxweights)[1]
+						for j in 1:size(boxweights)[2]
+							println("[$i,$j] -> $(boxweights[i,j])")
+							tot += boxweights[i,j]
+					    end
+					end
+					if (tot != length(Xinput)) println("Missing some pixels! Exiting...\n"); exit(0) end
+					println("\n\n")
+					#print(xEdges)
+					#println("\n\n")
+					#print(yEdges)
+					#println("\n\n")
+					#println("$(np.max(Xinput)[1]) $(np.max(Yinput)[1])")
+					#exit(0)
+				end
+=#
+
+
+				# Sum the number of bins with a non-zero pixel count
+				boxcount = 0
+				for i in 1:size(boxweights)[1]
+					for j in 1:size(boxweights)[2]
+						if (boxweights[i,j] > 0) boxcount += 1
+						elseif (boxweights[i,j] > grid^2) println("Problem with boxcount - check bins. Exiting..."); exit(0) end
+				    end
+				end
+
+				# Check if we have a new minimum box count for this x-y offset
+				if (boxcount < min_boxcount) min_boxcount = boxcount end
+
+			end
+
+		end
+
+		#println("Grid = $grid -> minimum count = $min_boxcount\n")
+
+		push!(Nboxes , min_boxcount)
+	    
 	end
 
-	#println("m=$m , N=$N\n")
 
-	return N
+	# Calcualte fractal dimension
+	grad , yint , r , p , stdErr = st.linregress( np.log(grids) , np.log(Nboxes) )
+
+
+	return -grad
+
 
 end
 
 
-#= Calculate fractal dimension data point for a given grid size m
 
+#= Calculate fractal dimension data point for a given grid size m
 *** Note that the (n+1)th index in the first axis of the Qpr array 
 corresponds to a boxweight, p, of n. This is to avoid indexing the 
 zeroth element of Qpr for boxweight = 0
-
 =#
 
 function lacunarityData( input , subclone_size , xBound , yBound , maxGrid )
@@ -204,168 +336,6 @@ end
 print("\rReading tumour data... done.")
 
 
-#=
-#================== Separate different sub-clones ===================#
-println("")
-print("Separating sub-clones...")
-
-sizeX = float_to_int(findmax(x1)[1] - findmin(x1)[1]) + 1
-sizeY = float_to_int(findmax(x2)[1] - findmin(x2)[1]) + 1 
-subclones = fill(0.0 , (sizeX,sizeY))
-
-#print(sizeX)
-#println("\n")
-
-minX = float_to_int(findmin(x1)[1])
-minY = float_to_int(findmin(x2)[1])
-
-#println("$minX , $minY")
-new = 0
-
-for i in 1:length(x1)
-
-	#println("--------------------------------------")
-	#println("$(x1[i]) , $(x2[i])")
-
-	assigned = false
-	coordX = float_to_int(x1[i])-minX+1
-	coordY = float_to_int(x2[i])-minY+1
-	#println(" ($(x1[i]) , $(x2[i])) --- ($(coordX) , $(coordY)) ")
-	
-	# Check if any neighbours of this cell is contained within an established sub-clone 
-	for x in -1:1
-
-		#if (assigned) break end	
-
-		for y in -1:1
-
-			#if (assigned) break end
-
-			if ((x == 0) && (y == 0)) continue end
-
-			# Take care of boundaries
-			if ( (coordX+x < 1) || (coordX+x > sizeX) || (coordY+y < 1) || (coordY+y > sizeY) )
-				continue
-			end
-
-			# Check neighbours
-			if ( subclones[coordX+x , coordY+y] != 0.0 )
-
-				if !(assigned)
-					subclones[coordX , coordY] = subclones[coordX+x , coordY+y]
-					assigned = true
-				
-				# Join any subclones up if they are really part of the same subclone
-				elseif ( (subclones[coordX , coordY] != subclones[coordX+x , coordY+y]) && (subclones[coordX+x , coordY+y] != 0) )
-					#println("CLASH BETWEEN ($coordX , $coordY)=$(subclones[coordX , coordY]) and ($(coordX+x) , $(coordY+y))=$(subclones[coordX+x , coordY+y])\n")
-					for j in 1:size(subclones)[1]
-						for k in 1:size(subclones)[2]
-							if (subclones[j,k] == subclones[coordX+x , coordY+y])
-								subclones[j,k] = subclones[coordX , coordY]
-
-							end
-						end
-					end
-
-				end
-			end
-		end
-	end
-
-	if !(assigned)
-		global new += 1
-		subclones[coordX , coordY] = new
-	end
-
-end
-
-
-# Clean up
-for q in 1:size(subclones)[1]
-	for r in 1:size(subclones)[2]
-		
-		for x in -1:1
-			for y in -1:1
-
-				if ((x == 0) && (y == 0)) continue end
-
-				# Take care of boundaries
-				if ( (q+x < 1) || (q+x > sizeX) || (r+y < 1) || (r+y > sizeY) )
-					continue
-				end
-
-				if ( (subclones[q,r] != subclones[q+x , r+y]) && (subclones[q+x , r+y] != 0) && (subclones[q,r] != 0) )
-					for j in 1:size(subclones)[1]
-						for k in 1:size(subclones)[2]
-							if (subclones[j,k] == subclones[q+x , r+y])
-								subclones[j,k] = subclones[q , r]
-
-							end
-						end
-					end
-				end
-
-			end
-		end
-
-	end
-end
-
-
-
-# Re-sort sub clone labels
-for i in 1:(new-2)
-
-	next_label = 0
-
-	if !(i in subclones)
-		#println("\n!!! i=$i")
-
-		for q in (i+1):(new-1)
-			if (q in subclones) next_label = q end 
-		end
-		#print("\n$next_label")
-
-		if (next_label != 0)
-			for j in 1:size(subclones)[1]
-				for k in 1:size(subclones)[2]
-					if (subclones[j,k] == next_label) subclones[j,k] = i end
-				end
-			end
-		end
-	end
-end
-
-
-
-
-print("\rSeparating sub-clones... done.")
-
-
-
-
-
-
-#================== Write sub-clone boundary data ===================#
-println("")
-print("Writing data...")
-
-# Write 2D sliced data
-outfile = string(path , "/" , ARGS[2] , "_sep_boundaries.csv" )
-open(outfile, "w") do f
-
-	for i in 1:size(subclones)[1]
-		for j in 1:size(subclones)[2]
-
-			if (subclones[i,j] > 0.0)
-				write( f , "$(i+minX-1),$(j+minY-1),$(subclones[i,j])\n")
-			end
-		end
-	end
-end
-
-print("\rWriting data... done.")
-=#
 
 
 
@@ -380,20 +350,23 @@ for label in 1:findmax(subclones)[1]
 	dfData = []
 	lacData = []
 	grids = []
+	subcloneX = []
+	subcloneY = []
 	minX = size(subclones)[1]
 	minY = size(subclones)[2]
 	maxX = 0
 	maxY = 0
 
-	#println("\n minX=$minX --- minY=$minY --- maxX=$maxX --- maxY=$maxY \n")
 
-	# Construct new array for individual sub-clone
+	# Construct new array for individual sub-clone (two lists with x- and y-coordinates)
 	for i in 1:size(subclones)[1]
 		for j in 1:size(subclones)[2]
 
 			if (subclones[i,j] == label) 
-				push!(sub , [i,j]) 
+				push!(subcloneX , i)
+				push!(subcloneY , j)
 
+				# Update max and min x- and y-coordinates
 				if (i < minX) minX = i
 				elseif (i > maxX) maxX = i
 				end
@@ -408,7 +381,6 @@ for label in 1:findmax(subclones)[1]
 
 	if (length(sub) < 4) continue end
 
-	#println("\n minX=$minX --- minY=$minY --- maxX=$maxX --- maxY=$maxY \n")
 
 	# Re-normalise coordinates of isolated sub-clone
 	for gland in sub
@@ -420,76 +392,43 @@ for label in 1:findmax(subclones)[1]
 	minX = 0
 	minY = 0
 
-	#println("\n minX=$minX --- minY=$minY --- maxX=$maxX --- maxY=$maxY \n")
 
-	# Compute fractal dimension of given sub-clone
-	gridsize = min(maxX , maxY)
-	maxGrid = gridsize
-	
+	# Define maximum gridsize for fractal dimension calcualtions
+	maxGrid = min(maxX , maxY)
+
+
+	# Construct list of box sizes to be used in fractal dimension calculation
+	for i in 1:maxGrid
+		push!(grids, i)
+	end
+
+
+	# Compute fractal dimension
+	fdim = fractalData2(subcloneX , subcloneY , grids)
+
 	println("")
-
-	while(gridsize > 0)
-		if (gridsize%2 == 0)
-			gridsize -= 1
-		 	continue
-		 end
-		print("\rBox size = $gridsize")
-		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
-		push!(grids , gridsize)
-		gridsize -= 1
-	end
-
-
-#=
-### For particularly large structures, only use a selection of box sizes
-	while(gridsize > (gridsize = 100)))
-		print("\rBox size = $gridsize")
-		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
-		push!(grids , gridsize)
-		gridsize -= 1
-	end
-	gridsize = 1
-	while(gridsize < 100))
-		print("\rBox size = $gridsize")
-		push!(dfData , fractalData( sub , maxX , maxY , gridsize ) )
-		push!(grids , gridsize)
-		gridsize += 1
-	end
-############
-=#
 
 
 	# Compute frequency distribution for the number of boxes of size r with a box-mass of p
 	#Qpr = lacunarityData( sub, length(sub) , maxX , maxY , maxGrid )
 
-	# Calcualte fractal dimension
-	grad , yint , r , p , stdErr = st.linregress( np.log(grids) , np.log(dfData) )
 
 	# Append fractal dimension value to array
-	push!( fractalDims , ( label , -grad ) )
+	push!( fractalDims , ( label , fdim ) )
 
 #=
 	# Compute moments of Qpr distribution and write lacunarity data to file
 	outfile = string(lac_path , "/subclone#$label" , ".dat" )
 	open(outfile, "w") do f
-
 		for r in 1:maxGrid
-
 			#if (r%20 != 0) continue end
-
 			# Compute first moment of Qpr
 			Z1 = pMoments( Qpr , r , 1 )
-
 			# Compute second moment of Qpr
 			Z2 = pMoments( Qpr , r , 2 )
-
 			lac = Z2/(Z1^2)
-
 			write( f , "$(log(r)) $(log(lac))\n" )
-
-
 		end
-
 	end
 =#
 
@@ -508,8 +447,6 @@ end
 
 print("\rCalculating fractal dimensions... done.")
 println("\n")
-
-
 
 
 
