@@ -1,7 +1,6 @@
 
 
 
-
 # Round and parse a given floating point to integer
 function float_to_int(x)
 
@@ -358,15 +357,15 @@ for label in 1:findmax(subclones)[1]
 	maxY = 0
 
 
-	# Construct new array for individual sub-clone (two lists with x- and y-coordinates)
+	# Construct new array for individual sub-clone
 	for i in 1:size(subclones)[1]
 		for j in 1:size(subclones)[2]
 
 			if (subclones[i,j] == label) 
+				push!(sub , [i,j]) 
 				push!(subcloneX , i)
 				push!(subcloneY , j)
 
-				# Update max and min x- and y-coordinates
 				if (i < minX) minX = i
 				elseif (i > maxX) maxX = i
 				end
@@ -387,14 +386,36 @@ for label in 1:findmax(subclones)[1]
 		gland[1] -= minX
 		gland[2] -= minY
 	end
+
+	for i in 1:length(subcloneX)
+
+		subcloneX[i] -= (minX - 1)
+		subcloneY[i] -= (minY - 1)
+
+	end
+
 	maxX -= minX
 	maxY -= minY
 	minX = 0
 	minY = 0
 
+	# Construct array from input coordinates (can tidy this up later by merging with above loop)
+	#subcloneX = fill(0 , (maxX+1))
+	#subcloneY = fill(0 , (maxY+1))
+	#subcloneX = []
+	#subcloneY = []
+	#for coord in sub
+	#	push!(subcloneX , coord[1]+1)
+	#	push!(subcloneY , coord[2]+1)
 
-	# Define maximum gridsize for fractal dimension calcualtions
-	maxGrid = min(maxX , maxY)
+		#subclone[coord[1]+1,coord[2]+1] = 1
+	#end
+
+
+
+	# Compute fractal dimension of given sub-clone
+	gridsize = min(maxX , maxY)
+	maxGrid = gridsize
 
 
 	# Construct list of box sizes to be used in fractal dimension calculation
