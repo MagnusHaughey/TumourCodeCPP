@@ -2,7 +2,7 @@
 
 
 # Round and parse a given floating point to integer
-function float_to_int(x)
+@everywhere function float_to_int(x)
 
 	minval = min(x - floor(x) , abs(x - ceil(x)))
 	y = floor(x) + (findfirst(isequal(minval) , [x - floor(x) , abs(x - ceil(x))]) - 1)
@@ -13,182 +13,102 @@ function float_to_int(x)
 end
 
 
-#=
-# Calculate fractal dimension data point for a given grid size m
-function fractalData( input , xBound , yBound , m )
-
-	xBoxes = 0
-	yBoxes = 0
-
-	N_orientations = 0
-	N_cumulative = 0
-	N = 0
-
-	yOffset = 0
-
-		while(yOffset <= m)
-
-			print("\rBox size = $m; y-offset = $yOffset")
-
-			N_orientations += 1
-			N = 0
-
-			while( (xBoxes*m) < xBound )
-
-				while( (yBoxes*m+yOffset) <= yBound )
 
 
-					if (yBoxes == 0)
-
-						gland_found = false
-
-						for i in (xBoxes*m):(m-1+(xBoxes*m))
-							if gland_found break end
-
-							for j in 0:(yOffset-1)
-
-								if gland_found break end
-
-								if [i,j] in input
-									N += 1
-									#println("Gland found!\n")
-									gland_found = true
-								end
-							end
-						end
-					end
-
-					
-
-						gland_found = false
-
-						for i in (xBoxes*m):(m-1+(xBoxes*m))
-							if gland_found break end
-
-							for j in (yBoxes*m+yOffset):(m-1+(yBoxes*m)+yOffset)
-
-								if gland_found break end
-
-								if [i,j] in input
-									N += 1
-									#println("Gland found!\n")
-									gland_found = true
-								end
-							end
-						end
-					
+# Compute the minimum number of boxes of size=grid needed to cover the pixels at cooredinates contained within Xinput and Yinput
+@everywhere function compute_boxCount(Xinput , Yinput , grid)
 
 
-				yBoxes += 1
+	min_boxCount = (length(Xinput))^2
 
-				end
 
-				xBoxes += 1
-				yBoxes = 0
+	# Repeat box counting procedure for many different offsets in both x and y
+	for xOffset in 0:grid
 
+		for yOffset in 0:grid
+
+			Xinput_offsetted = []
+			Yinput_offsetted = []
+
+			for k in 1:length(Xinput)
+				push!(Xinput_offsetted , (Xinput[k] + xOffset))
+				push!(Yinput_offsetted , (Yinput[k] + yOffset))
 			end
 
-			N_cumulative += N
-			xBoxes = 0
-			yBoxes = 0
-			yOffset += 1
+
+			# Compute 2 dimensional histogram of subclone boundary data 
+			xBins = np.arange(0,(np.max(Xinput)[1]+xOffset+3+grid),grid)
+			yBins = np.arange(0,(np.max(Yinput)[1]+yOffset+3+grid),grid)
+			boxweights, xEdges , yEdges = np.histogram2d( Xinput_offsetted , Yinput_offsetted , bins=(xBins,yBins) )
+
+
+			# Sum the number of bins with a non-zero pixel count
+			boxCount = 0
+			for i in 1:size(boxweights)[1]
+				for j in 1:size(boxweights)[2]
+					if (boxweights[i,j] > 0) boxCount += 1
+					elseif (boxweights[i,j] > grid^2) println("Problem with boxcount - check bins. Exiting..."); exit(0) end
+			    end
+			end
+
+			# Check if we have a new minimum box count for this x-y offset
+			if (boxCount < min_boxCount) min_boxCount = boxCount end
 
 		end
 
+	end
 
-	return (N_cumulative/N_orientations)
+
+	return min_boxCount
+
 
 end
-=#
 
 
-function fractalData2(Xinput , Yinput , grids )
+
+
+@everywhere function fractalData(Xinput , Yinput , grids , outpath , label )
 
 	println("")
-	Nboxes = []
+	boxCount_futures = Array{Future}(undef , length(grids))
+	boxCount = zeros(length(grids))
 
+	index = 1
+	core = 1
 	for grid in grids
 
-		print("\rBox size = $grid of $(np.max(grids)) ")
+		# Compute boxcounts for each gridsize
+		boxCount_futures[index] = remotecall( compute_boxCount , core , Xinput , Yinput , grid )
 
-		N_orientations = 0
-		N_cumulative = 0
+		index += 1
+		core %= nworkers()
+		core += 1
 
-		min_boxcount = (length(Xinput))^2
+	end
 
-		# Repeat box counting procedure for many different offsets in both x and y
-		for xOffset in 0:grid
+	# Fetch the values of all boxcounts
+	for i in 1:length(grids)
 
-			for yOffset in 0:grid
+		outval = fetch(wait(boxCount_futures[i]))
+		println("Grid=$(grids[i]); boxcount=$outval")
+		boxCount[i] = outval
 
-				N_orientations += 1
-
-				Xinput_offsetted = []
-				Yinput_offsetted = []
-
-				for k in 1:length(Xinput)
-					push!(Xinput_offsetted , (Xinput[k] + xOffset))
-					push!(Yinput_offsetted , (Yinput[k] + yOffset))
-				end
-
-				# Compute 2 dimensional histogram of subclone boundary data 
-				xBins = np.arange(0,(np.max(Xinput)[1]+xOffset+3+grid),grid)
-				yBins = np.arange(0,(np.max(Yinput)[1]+yOffset+3+grid),grid)
-				boxweights, xEdges , yEdges = np.histogram2d( Xinput_offsetted , Yinput_offsetted , bins=(xBins,yBins) )
+	end
 
 
-#=
-				if (grid >= 60)
-
-					#println("$(size(boxweights))")
-					tot = 0
-					for i in 1:size(boxweights)[1]
-						for j in 1:size(boxweights)[2]
-							println("[$i,$j] -> $(boxweights[i,j])")
-							tot += boxweights[i,j]
-					    end
-					end
-					if (tot != length(Xinput)) println("Missing some pixels! Exiting...\n"); exit(0) end
-					println("\n\n")
-					#print(xEdges)
-					#println("\n\n")
-					#print(yEdges)
-					#println("\n\n")
-					#println("$(np.max(Xinput)[1]) $(np.max(Yinput)[1])")
-					#exit(0)
-				end
-=#
-
-
-				# Sum the number of bins with a non-zero pixel count
-				boxcount = 0
-				for i in 1:size(boxweights)[1]
-					for j in 1:size(boxweights)[2]
-						if (boxweights[i,j] > 0) boxcount += 1
-						elseif (boxweights[i,j] > grid^2) println("Problem with boxcount - check bins. Exiting..."); exit(0) end
-				    end
-				end
-
-				# Check if we have a new minimum box count for this x-y offset
-				if (boxcount < min_boxcount) min_boxcount = boxcount end
-
-			end
-
+	outfile = string(outpath , "/subclone#$label" , ".dat" )
+	open(outfile, "w") do f
+		for i in 1:length(grids)
+			write( f , "$(-log(grids[i])) $(log(boxCount[i]))\n" )
 		end
-
-		#println("Grid = $grid -> minimum count = $min_boxcount\n")
-
-		push!(Nboxes , min_boxcount)
-	    
 	end
 
 
 	# Calcualte fractal dimension
-	grad , yint , r , p , stdErr = st.linregress( np.log(grids) , np.log(Nboxes) )
+	grad , yint , r , p , stdErr = st.linregress( np.log(grids) , np.log(boxCount) )
 
 
 	return -grad
-
 
 end
 
@@ -200,61 +120,102 @@ corresponds to a boxweight, p, of n. This is to avoid indexing the
 zeroth element of Qpr for boxweight = 0
 =#
 
-function lacunarityData( input , subclone_size , xBound , yBound , maxGrid )
 
+@everywhere function compute_marginalQpr( input , subclone_size , xBound , yBound , grid )
 
-	Qpr = fill(0.0 , (subclone_size+1 , maxGrid))
+	marg_Qpr = fill(0.0 , (subclone_size+1))
 
-	for gridsize in 1:maxGrid
+	Nr = 0
+	xOffset = 0
 
-		#if (gridsize%20 != 0) continue end
+	while( (grid + xOffset - 1) < xBound )
 
-		print("\rCalculating lacunarity... [$gridsize/$maxGrid]")
+		yOffset = 0
 
-		Nr = 0
-		xOffset = 0
-
-		while( (gridsize + xOffset - 1) < xBound )
-
-			yOffset = 0
-
-			while( (gridsize + yOffset - 1) < yBound )
-				boxweight = 0
+		while( (grid + yOffset - 1) < yBound )
+			boxweight = 0
 				
-				xBegin = xOffset
-				yBegin = yOffset
-				xEnd = gridsize + xOffset - 1
-				yEnd = gridsize + yOffset - 1
+			xBegin = xOffset
+			yBegin = yOffset
+			xEnd = grid + xOffset - 1
+			yEnd = grid + yOffset - 1
 
-				for i in xBegin:xEnd
-					for j in yBegin:yEnd
-						if ([i,j] in input) boxweight += 1 end
-					end
+			for i in xBegin:xEnd
+				for j in yBegin:yEnd
+					if ([i,j] in input) boxweight += 1 end
 				end
-
-				Nr += 1
-				Qpr[boxweight+1 , gridsize] += 1
-
-				yOffset += 1
 			end
 
-			xOffset += 1
+			Nr += 1
+			marg_Qpr[boxweight+1] += 1
+
+			yOffset += 1
 		end
 
-		# Normalise distribution
-		for p in 1:size(Qpr)[1]
-			Qpr[p , gridsize] /= Nr
-		end
-
-		#println("r=$gridsize -> N(r)=$Nr")
-
+		xOffset += 1
 	end
 
 	
+	#print("GRID=$grid\n")
+	# Normalise distribution
+	for p in 1:size(marg_Qpr)[1]
+		marg_Qpr[p] /= Nr
+	end
 
+	#print(marg_Qpr)
+
+	return marg_Qpr
+
+
+
+end
+
+
+@everywhere function lacunarityData( input , subclone_size , xBound , yBound , grids )
+
+
+	Qpr_futures = Array{Future}(undef , length(grids))
+	#for i in 1:length(Qpr_futures)
+	#	Qpr_futures[i] = Array{Future}(undef , (subclone_size+1))
+	#end
+
+	Qpr = fill(0.0 , (subclone_size+1 , length(grids)))
+
+
+	index = 1
+	core = 1
+	for grid in grids
+
+		# Compute boxcounts for each gridsize (*** Notice that the Qpr_futures array is the "transpose" of the Qpr array)
+		Qpr_futures[index] = remotecall( compute_marginalQpr , core , input , subclone_size , xBound , yBound , grid )
+
+		index += 1
+		core %= nworkers()
+		core += 1
+
+	end
+
+	# Fetch all values of Qpr array when jobs have finished
+	for r in 1:length(grids)
+
+		marg = fetch( wait(Qpr_futures[r]) )
+		#print(marg)
+		#exit(0)
+
+		for p in 1:(subclone_size+1)
+
+		val = marg[p,1]
+		Qpr[p , r] = val
+
+		end
+	end
+
+	
 	return Qpr
 
 end
+
+
 
 
 
@@ -281,12 +242,12 @@ end
 
 #================== Import Python/NumPy modules ===================#
 println("")
-print("Importing Python/NumPy modules...")
-using PyCall
-@pyimport numpy as np
-@pyimport scipy.stats as st
+print("Importing Python/NumPy modules [$(nworkers()) thread(s)]...")
+@everywhere using PyCall
+@everywhere @pyimport numpy as np
+@everywhere @pyimport scipy.stats as st
 
-print("\rImporting Python/NumPy modules... done.")
+print("\rImporting Python/NumPy modules [$(nworkers()) thread(s)]... done.")
 
 
 
@@ -296,10 +257,12 @@ println("")
 print("Reading tumour data...")
 path = ARGS[1]
 
-# Create directory for lacunarity data files
+# Create directory for fractal dimension and lacunarity data files
+frac_path = string( path , "/" , ARGS[2] , "_fractalDimensions/")
 lac_path = string( path , "/" , ARGS[2] , "_lacunarity/")
 
-# If directory does not exist create one
+# If directories do not exist create one
+if (!isdir(frac_path)) mkdir(frac_path) end
 if (!isdir(lac_path)) mkdir(lac_path) end
 
 infile = string(path , "/" , ARGS[2] , "_sepBoundaries.csv")
@@ -378,7 +341,8 @@ for label in 1:findmax(subclones)[1]
 		end
 	end
 
-	if (length(sub) < 4) continue end
+	if (length(sub) < 9) continue end
+
 
 
 	# Re-normalise coordinates of isolated sub-clone
@@ -399,64 +363,82 @@ for label in 1:findmax(subclones)[1]
 	minX = 0
 	minY = 0
 
-	# Construct array from input coordinates (can tidy this up later by merging with above loop)
-	#subcloneX = fill(0 , (maxX+1))
-	#subcloneY = fill(0 , (maxY+1))
-	#subcloneX = []
-	#subcloneY = []
-	#for coord in sub
-	#	push!(subcloneX , coord[1]+1)
-	#	push!(subcloneY , coord[2]+1)
-
-		#subclone[coord[1]+1,coord[2]+1] = 1
-	#end
-
 
 
 	# Compute fractal dimension of given sub-clone
-	gridsize = min(maxX , maxY)
-	maxGrid = gridsize
+	maxGrid = min(maxX , maxY)
+
+	
+
+	#======= FOR SIERPINSKI CARPET ONLY (AT THE MOMEMT) ========
+
+	# Set list of grid sizes as the scales corresponding to the sequence of minima...
+	iteration = 0
+	while((3^iteration) < (length(subcloneX)^0.5))
+		push!(grids, 3^iteration)
+		iteration += 1
+	end
+	#println(grids)
+	#exit(0)
+
+	===========================================================#
 
 
+
+	#======= FOR ALL OTHER STRUCTURES ========#
+
+	iteration = 0
+	while((2^iteration) < maxGrid)
+		push!(grids, 2^iteration)
+		iteration += 1
+	end
+
+	#=========================================#
+
+#=
 	# Construct list of box sizes to be used in fractal dimension calculation
 	for i in 1:maxGrid
 		push!(grids, i)
 	end
-
+=#
 
 	# Compute fractal dimension
-	fdim = fractalData2(subcloneX , subcloneY , grids)
-
-	println("")
-
-
-	# Compute frequency distribution for the number of boxes of size r with a box-mass of p
-	#Qpr = lacunarityData( sub, length(sub) , maxX , maxY , maxGrid )
-
+	fdim = fractalData(subcloneX , subcloneY , grids , frac_path , label)
 
 	# Append fractal dimension value to array
 	push!( fractalDims , ( label , fdim ) )
 
-#=
+
+	println("")
+	print("\rCalculating lacunarity curves...")
+
+
+	# Compute frequency distribution for the number of boxes of size r with a box-mass of p
+	Qpr = lacunarityData( sub, length(sub) , maxX , maxY , grids )
+
+
 	# Compute moments of Qpr distribution and write lacunarity data to file
 	outfile = string(lac_path , "/subclone#$label" , ".dat" )
 	open(outfile, "w") do f
-		for r in 1:maxGrid
+		for r in 1:length(grids)
 			#if (r%20 != 0) continue end
 			# Compute first moment of Qpr
 			Z1 = pMoments( Qpr , r , 1 )
 			# Compute second moment of Qpr
 			Z2 = pMoments( Qpr , r , 2 )
 			lac = Z2/(Z1^2)
-			write( f , "$(log(r)) $(log(lac))\n" )
+			write( f , "$(log(grids[r])) $(log(lac))\n" )
 		end
 	end
-=#
+
+
+	print("\rCalculating lacunarity curves... Done.")
+
 
 end
 
 # Write fractal dimension data
-outfile = string(path , "/" , ARGS[2] , "_fractalAnalysis.csv" )
+outfile = string(frac_path , "/fractalDimensions.csv" )
 open(outfile, "w") do f
 
 	for subclone in fractalDims
@@ -466,7 +448,6 @@ end
 
 
 
-print("\rCalculating fractal dimensions... done.")
 println("\n")
 
 
