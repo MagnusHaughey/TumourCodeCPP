@@ -15,12 +15,46 @@ end
 
 
 
+function sort_labels( subclones )
+
+
+	for i in 1:findmax(subclones)[1]
+
+		next_label = 0
+
+		if !(i in subclones)
+
+			for q in (i+1):(findmax(subclones)[1])
+				if (q in subclones) 
+					next_label = q 
+					break
+				end 
+			end
+
+			if (next_label != 0)
+				for j in 1:size(subclones)[1]
+					for k in 1:size(subclones)[2]
+						if (subclones[j,k] == next_label) 
+							subclones[j,k] = i 
+							#println("Shifted $next_label to $i")
+						end
+					end
+				end
+			end
+		end
+	end
+
+end
+
+
 
 #================== Import Python/NumPy modules ===================#
 println("")
 print("Importing Python/NumPy modules...")
 using PyCall
+using Pandas
 @pyimport numpy as np
+@pyimport numpy.core.defchararray as char
 
 print("\rImporting Python/NumPy modules... done.")
 
@@ -32,31 +66,20 @@ println("")
 print("Reading tumour data...")
 path = ARGS[1]
 infile = string(path , "/tumour.csv")
-data = np.loadtxt( infile , unpack=true , delimiter="," , skiprows=1 , usecols=(0,1,2,4))
+#data = np.loadtxt( infile , unpack=true , delimiter="," , skiprows=1 , usecols=(0,1,2,4))
 
-# Create x, y, z, GA vectors
-data_set = length(data)/4
-#println("$data  $data_set")
-x = fill(0.0 , float_to_int(data_set))
-y = fill(0.0 , float_to_int(data_set))
-z = fill(0.0 , float_to_int(data_set))
-res = fill(0.0 , float_to_int(data_set))
 
-# Unpack into separate x, y, z, GA vectors
-for i in 1:length(data)
-	if ( ((i-1)%4) == 0 ) x[float_to_int(((i-1)/4)+1)] = data[i] 
-	elseif ( ((i-2)%4) == 0 ) y[float_to_int(((i-2)/4)+1)] = data[i] 
-	elseif ( ((i-3)%4) == 0 ) z[float_to_int(((i-3)/4)+1)] = data[i] 
-	elseif ( ((i-4)%4) == 0 ) res[float_to_int(((i-4)/4)+1)] = data[i] 
-	end
-end
+# Determine if data was simulated with or without cell death
+death = path[char.find(path , "death")[1] + 7]
+
+
+# Read simulated tumour data file
+data = Array(read_csv(infile, usecols=(0,1,2,4)))
+
+
 
 print("\rReading tumour data... done.")
 
-#println(x)
-#println(y)
-#println(z)
-#println(res)
 
 
 #================== Slice 3D data at specified coordinate ===================#
@@ -73,13 +96,31 @@ if ((slice_fraction < 0.0) || (slice_fraction > 1.0))
 end
 
 
-xmin = findmin(x)[1]
-ymin = findmin(y)[1]
-zmin = findmin(z)[1]
 
-xmax = findmax(x)[1]
-ymax = findmax(y)[1]
-zmax = findmax(z)[1]
+
+# Find max and min x, y and z values in data array
+xmin = data[1,1]
+xmax = data[1,1]
+
+ymin = data[1,2]
+ymax = data[1,2]
+
+zmin = data[1,3]
+zmax = data[1,3]
+
+
+for i in 1:size(data)[1]
+
+	if (data[i,1] < xmin) global xmin = data[i,1] end
+	if (data[i,1] > xmax) global xmax = data[i,1] end
+
+	if (data[i,2] < ymin) global ymin = data[i,2] end
+	if (data[i,2] > ymax) global ymax = data[i,2] end
+
+	if (data[i,3] < zmin) global zmin = data[i,3] end
+	if (data[i,3] > zmax) global zmax = data[i,3] end
+
+end
 
 
 
@@ -105,44 +146,29 @@ slice2 = []
 GAdata = []
 
 if (slice[1] == 'x')
-	for i in 1:length(x)
-		if (x[i] == slice_val)
-			sliced_tumour[float_to_int(y[i] - ymin) + 1 , float_to_int(z[i] - zmin) + 1] = res[i]
-			#push!(slice1 , y[i])
-			#push!(slice2 , z[i])
-			#push!(GAdata , res[i])
-			#print("\rSlicing data... $(i*100.0/(dim^2))%")
+	for i in 1:size(data)[1]
+		if (data[i,1] == slice_val)
+			sliced_tumour[float_to_int(data[i,2] - ymin) + 1 , float_to_int(data[i,3] - zmin) + 1] = data[i,4]
 		end
 	end
 
 elseif (slice[1] == 'y')
-	for i in 1:length(y)
-		if (y[i] == slice_val)
-			sliced_tumour[float_to_int(x[i] - xmin) + 1 , float_to_int(z[i] - zmin) + 1] = res[i]
-			#push!(slice1 , x[i])
-			#push!(slice2 , z[i])
-			#push!(GAdata , res[i])
+	for i in 1:size(data)[1]
+		if (data[i,2] == slice_val)
+			sliced_tumour[float_to_int(data[i,1] - xmin) + 1 , float_to_int(data[i,3] - zmin) + 1] = data[i,4]
 		end
 	end
 
 else
-	for i in 1:length(z)
-		if (z[i] == slice_val)
-			sliced_tumour[float_to_int(x[i] - xmin) + 1 , float_to_int(y[i] - ymin) + 1] = res[i]
-			#push!(slice1 , x[i])
-			#push!(slice2 , y[i])
-			#push!(GAdata , res[i])
+	for i in 1:size(data)[1]
+		if (data[i,3] == slice_val)
+			sliced_tumour[float_to_int(data[i,1] - xmin) + 1 , float_to_int(data[i,2] - ymin) + 1] = data[i,4]
 		end
 	end
 end
 
 print("\rSlicing data... done.")
 
-
-#println(slice1)
-#println(slice2)
-#println(GAdata)
-#println(slice_val)
 
 
 
@@ -305,30 +331,8 @@ for q in 1:size(subclones)[1]
 end
 
 
-
-# Re-sort sub clone labels
-for i in 1:(new-2)
-
-	next_label = 0
-
-	if !(i in subclones)
-		#println("\n!!! i=$i")
-
-		for q in (i+1):(new-1)
-			if (q in subclones) next_label = q end 
-		end
-		#print("\n$next_label")
-
-		if (next_label != 0)
-			for j in 1:size(subclones)[1]
-				for k in 1:size(subclones)[2]
-					if (subclones[j,k] == next_label) subclones[j,k] = i end
-				end
-			end
-		end
-	end
-end
-
+# Tidy up sub clone labels
+#sort_labels(sublcones)
 
 
 
@@ -336,23 +340,160 @@ print("\rSeparating sub-clones... done.")
 
 
 
+#================= Find boundaries which lie within larger closed boundaries ===================#
+
+
+println("")
+print("Finding internal boundaries...")
+
+
+for inner_label in 1:findmax(subclones)[1]
+
+
+	cell_i = 0
+	cell_j = 0
+
+
+	# Find cell in sublcones with this label
+	for i in 1:size(subclones)[1]
+		for j in 1:size(subclones)[2]
+
+			if (subclones[i,j] == inner_label)
+				cell_i = i
+				cell_j = j
+			end
+		end
+	end
+
+
+	# If labels have been merged/deleted cell_i and cell_j will be zero. Continue to next label...
+	if ((cell_i == 0) && (cell_j == 0)) continue end
+	
+
+	# For this subclone boundary, ask if it is bound to by cells 
+	# from any other boundary in the upwards, downwards, left and right direction
+	candidates_u = []
+	candidates_d = []
+	candidates_l = []
+	candidates_r = []
+	for i in 1:size(subclones)[1]
+
+		if (i < cell_i)
+			if ((subclones[i,cell_j] != 0) && (subclones[i,cell_j] != inner_label))
+				push!(candidates_l , subclones[i,cell_j])
+			end
+		end
+
+		if (i > cell_i)
+			if ((subclones[i,cell_j] != 0) && (subclones[i,cell_j] != inner_label))
+				push!(candidates_r , subclones[i,cell_j])
+			end
+		end
+	end
+
+	for j in 1:size(subclones)[2]
+
+		if (j < cell_j)
+			if ((subclones[cell_i,j] != 0) && (subclones[cell_i,j] != inner_label))
+				push!(candidates_d , subclones[cell_i,j])
+			end
+		end
+
+		if (j > cell_j)
+			if ((subclones[cell_i,j] != 0) && (subclones[cell_i,j] != inner_label))
+				push!(candidates_u , subclones[cell_i,j])
+			end
+		end
+	end
+
+
+	# Then check if a label appears in all of the candidates_u, candidates_d, candidates_l, candidates_r lists
+	outer_label = 0
+	for label_j in 1:findmax(subclones)[1]
+
+		if ((label_j in candidates_u) && (label_j in candidates_d) && (label_j in candidates_l) && (label_j in candidates_r))
+			outer_label = label_j
+		end
+	end
+
+
+
+	# If no labels are in all 4 lists, move onto next subclone
+	if (outer_label == 0) continue end
+
+
+
+	# If a label is common to all 4 lists, record path from outer surface of our subclone to this potential "outer" subclone
+	chord = []
+	for i in cell_i:size(subclones)[1]
+
+			if (subclones[i,cell_j] == inner_label) chord = []
+			else push!(chord , sliced_tumour[i+minX-1,cell_j+minY-1]) end
+
+			if (subclones[i,cell_j] == outer_label) break end
+
+	end
+
+
+
+	# Then check that the region between inner boundary and outer boundary is red
+	if (chord[1] == 1.0)
+
+
+		# If so, either delete inner boundary or assign it the same label as outer boundary
+		if (death == '1')
+
+			# delete internal boundary
+			for i in 1:size(subclones)[1]
+				for j in 1:size(subclones)[2]
+
+					if (subclones[i,j] == inner_label) subclones[i,j] = 0.0 end
+
+				end
+			end
+
+		else
+
+			# assign the same label to inner and outer boundary
+			merged_label = min(inner_label , outer_label)
+			binned_label = max(inner_label , outer_label)
+
+			for i in 1:size(subclones)[1]
+				for j in 1:size(subclones)[2]
+
+					if (subclones[i,j] == binned_label) subclones[i,j] = merged_label end
+
+				end
+			end
+
+		end
+	end
+
+end
+
+
+# Tidy up sub clone labels
+sort_labels(subclones)
+
+
+print("\rFinding internal boundaries... Done.")
+
 
 #================== Write sub-clone boundary data ===================#
 println("")
 print("Writing data...")
 
+
 # Write 2D sliced data
 outfile = string(path , "/" , slice , "_raw.csv" )
 open(outfile, "w") do f
-	#for i in 1:length(GAdata)
-	#	if ( GAdata[i] != -1.0 ) write( f , "$(slice1[i]),$(slice2[i]),$(GAdata[i])\n") end
-	#end
 	for i in 1:size(sliced_tumour)[1]
 		for j in 1:size(sliced_tumour)[2]
 			if ( sliced_tumour[i,j] != -1.0 ) write( f , "$i,$j,$(sliced_tumour[i,j])\n") end
 		end
 	end
 end
+
 
 # Write boundary data
 outfile = string(path , "/" , ARGS[2] , "_sepBoundaries.csv" )
@@ -369,6 +510,7 @@ open(outfile, "w") do f
 end
 
 print("\rWriting data... done.")
+println("")
 println("")
 
 
